@@ -1,0 +1,33 @@
+Metadata-Version: 2.1
+Name: camel-xml2dsl
+Version: 0.0.1
+Summary: xml definition to dsl definition routes
+Home-page: https://github.com/jorgecastro05/script-aro.git
+Author: Jorge Castro
+Author-email: jorgecastro05@hotmail.com
+License: UNKNOWN
+Project-URL: Bug Tracker, https://github.com/jorgecastro05/script-aro.git
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENCE
+
+# XML to DSL route
+
+## Installing the script:
+
+    pip install camel_xml2dsl-0.0.1-py3-none-any.whl --force-reinstall
+
+## Running the script
+
+    xml2dsl --xml xml_context_file.xml
+
+## Building the project
+
+    python -m build
+
+
+

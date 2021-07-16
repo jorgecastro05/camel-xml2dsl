@@ -1,0 +1,12 @@
+LICENCE
+README.md
+pyproject.toml
+setup.cfg
+src/camel_xml2dsl.egg-info/PKG-INFO
+src/camel_xml2dsl.egg-info/SOURCES.txt
+src/camel_xml2dsl.egg-info/dependency_links.txt
+src/camel_xml2dsl.egg-info/entry_points.txt
+src/camel_xml2dsl.egg-info/requires.txt
+src/camel_xml2dsl.egg-info/top_level.txt
+src/xml2dsl/__init__.py
+src/xml2dsl/xml2dsl.py
