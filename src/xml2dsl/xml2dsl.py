@@ -54,6 +54,9 @@ class Converter:
     def propertyPlaceholder_def(self, node):
         return ""
 
+    def dataFormats_def(self, node):
+        return '\n//TODO: define dataformat ' + node[0].tag + '\n'
+
     def endpoint_def(self, node):
         return ""
 
@@ -83,15 +86,15 @@ class Converter:
         redeliveryPolicy = node.find("camel:redeliveryPolicy", ns)
         if redeliveryPolicy is not None:
             onException_def += '\n.maximumRedeliveries('+redeliveryPolicy.attrib['maximumRedeliveries'] + \
-                ')' if redeliveryPolicy.attrib['maximumRedeliveries'] else ""
+                ')' if 'maximumRedeliveries' in redeliveryPolicy.attrib else ""
             onException_def += '\n.redeliveryDelay('+redeliveryPolicy.attrib['redeliveryDelay'] + \
-                ')' if redeliveryPolicy.attrib['redeliveryDelay'] else ""
+                ')' if 'redeliveryDelay' in redeliveryPolicy.attrib else ""
             onException_def += '\n.retryAttemptedLogLevel(LoggingLevel.' + \
                 redeliveryPolicy.attrib['retryAttemptedLogLevel'] + \
-                ')' if redeliveryPolicy.attrib['retryAttemptedLogLevel'] else ""
+                ')' if 'retryAttemptedLogLevel' in redeliveryPolicy.attrib else ""
             onException_def += '\n.retriesExhaustedLogLevel(LoggingLevel.' + \
                 redeliveryPolicy.attrib['retriesExhaustedLogLevel'] + \
-                ')' if redeliveryPolicy.attrib['retriesExhaustedLogLevel'] else ""
+                ')' if 'retriesExhaustedLogLevel' in redeliveryPolicy.attrib else ""
             node.remove(redeliveryPolicy)
         onException_def += self.analyze_node(node)
         onException_def += "\n.end();\n"
@@ -154,6 +157,9 @@ class Converter:
         setBody_predicate = self.analyze_element(node[0])
         return '\n.setBody(' + setBody_predicate + ')'
 
+    def convertBodyTo_def(self, node):
+        return '\n.convertBodyTo('+ node.attrib['type'] + '.class)'
+
     def unmarshal_def(self, node):
         return '\n.unmarshal()' + self.analyze_node(node)
 
@@ -194,6 +200,10 @@ class Converter:
         else:
             return '\n.removeHeaders("' + node.attrib['pattern']+'")'
 
+    def removeHeader_def(self, node):
+        return '\n.removeHeaders("' + node.attrib['headerName']+'")'
+        
+
     def xquery_def(self, node):
         return 'xquery("'+ node.text +'") //xquery not finished please review'
 
@@ -213,6 +223,9 @@ class Converter:
         doCatch_def += self.analyze_node(node)
         doCatch_def += "\n.end() //end doCatch"
         return doCatch_def
+
+    def handled_def(self, node):
+        return '.handled(' + node[0].text + ')'
 
 
 if __name__ == "__main__":
