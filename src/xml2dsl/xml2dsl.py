@@ -9,7 +9,7 @@ console = Console()
 # TODO:
 # jaxb dataformat as bean because dsl not support pretty print and context simultaneous
 # parallelProcessing support in split
-# todo components: bean, aggregator, multicast, recipientlist
+# todo components: aggregator, multicast, recipientlist
 
 
 class Converter:
@@ -64,7 +64,7 @@ class Converter:
         return "//TODO: Multicast"
     
     def bean_def(self, node):
-        return "//TODO: Bean"
+        return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['method'] + '")'
 
     def aggregator_def(self, node):
         return "//TODO: Aggregator"
