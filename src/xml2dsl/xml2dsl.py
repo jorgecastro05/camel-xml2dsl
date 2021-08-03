@@ -136,7 +136,10 @@ class Converter:
         return '\n.otherwise()' + self.analyze_node(node)
 
     def simple_def(self, node):
-        return 'simple("' + node.text + '")'
+        if node.text is not None:
+            return 'simple("' + node.text + '")'
+        else:
+            return 'simple("")'
 
     def constant_def(self, node):
         return 'constant("' + node.text + '")'
