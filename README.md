@@ -2,7 +2,7 @@
 
 ## Installing the script:
 
-    pip install camel_xml2dsl-0.0.x-py3-none-any.whl --force-reinstall
+    pip install camel_xml2dsl-0.0.x-py3-none-any.whl
 
 Where x belongs to release version
 
