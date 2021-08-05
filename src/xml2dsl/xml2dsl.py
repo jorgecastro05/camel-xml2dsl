@@ -2,14 +2,16 @@ import configargparse
 from lxml import etree, objectify
 from rich import console
 from rich.console import Console
+import importlib.metadata
 
+__version__ = importlib.metadata.version('camel-xml2dsl')
 ns = {"camel": "http://camel.apache.org/schema/spring"}
 console = Console()
 
 # TODO:
 # jaxb dataformat as bean because dsl not support pretty print and context simultaneous
 # parallelProcessing support in split
-# todo components: aggregator, multicast, recipientlist
+# todo components: aggregator, recipientlist
 
 
 class Converter:
@@ -18,7 +20,7 @@ class Converter:
 
     def xml_to_dsl(self):
         p = configargparse.ArgParser(
-            description="Transforms xml routes to dsl routes")
+            description="Transforms xml routes to dsl routes " + __version__)
         p.add_argument('--xml', metavar='xml', type=str,
                        help='xml camel context file', required=True, env_var='XML_CTX_INPUT')
         args = p.parse_args()
@@ -30,8 +32,12 @@ class Converter:
             for camelContext in root.findall('camel:camelContext', ns):
                 console.log("processing camel context",
                             camelContext.attrib['id'])
+                self.get_namespaces(camelContext)
                 self.dsl_route = self.analyze_node(camelContext)
                 print("dsl route:\n", self.dsl_route)
+
+    def get_namespaces(self, node):
+        console.log("namespaces:", node.nsmap)
 
     def analyze_node(self, node):
         dslText = ""
@@ -61,7 +67,10 @@ class Converter:
         return ""
 
     def multicast_def(self, node):
-        return "//TODO: Multicast"
+        multicast_def = "\n.multicast()"
+        multicast_def += self.analyze_node(node)
+        multicast_def += "\n.end() //end multicast"
+        return multicast_def
     
     def bean_def(self, node):
         return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['method'] + '")'
@@ -154,7 +163,10 @@ class Converter:
         return xpath_def
 
     def to_def(self, node):
-        return '\n.to("' + node.attrib['uri'] + '")'
+        if 'pattern' in node.attrib and 'InOnly' in node.attrib['pattern']:
+            return '\n.inOnly("' + node.attrib['uri'] + '")'
+        else:
+            return '\n.to("' + node.attrib['uri'] + '")'
 
     def setBody_def(self, node):
         setBody_predicate = self.analyze_element(node[0])
@@ -230,6 +242,8 @@ class Converter:
     def handled_def(self, node):
         return '.handled(' + node[0].text + ')'
 
+    def transacted_def(self, node):
+        return ""
 
 if __name__ == "__main__":
     converter = Converter()
