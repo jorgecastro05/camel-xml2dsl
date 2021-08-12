@@ -245,6 +245,9 @@ class Converter:
     def transacted_def(self, node):
         return ""
 
+    def wireTap_def(self, node):
+        return '\n.wireTap("'+ node.attrib['uri'] +'")'
+
 if __name__ == "__main__":
     converter = Converter()
     converter.xml_to_dsl()
