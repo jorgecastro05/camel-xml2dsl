@@ -73,7 +73,12 @@ class Converter:
         return multicast_def
     
     def bean_def(self, node):
-        return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['method'] + '")'
+        if 'method' in node.attrib:
+            return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['method'] + '")'
+        elif 'beanType' in node.attrib:
+            return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['beanType'] + '")'
+        else:
+            return '\n.bean("' + node.attrib['ref'] + '")'
 
     def aggregator_def(self, node):
         return "//TODO: Aggregator"
@@ -247,6 +252,21 @@ class Converter:
 
     def wireTap_def(self, node):
         return '\n.wireTap("'+ node.attrib['uri'] +'")'
+
+    def language_def(self, node):
+        return 'language("'+ node.attrib['language']+'","'+ node.text +'")'
+
+    def threads_def(self, node):
+        maxPoolSize = node.attrib['maxPoolSize'] if 'maxPoolSize' in node.attrib else None
+        poolSize = node.attrib['poolSize'] if 'poolSize' in node.attrib else None
+        if poolSize is None and maxPoolSize is not None:
+            poolSize = maxPoolSize
+        if poolSize is not None and maxPoolSize is None:
+            maxPoolSize = poolSize
+        if 'threadName' in node.attrib:
+            return '\n.threads('+ poolSize+','+ maxPoolSize+',"'+ node.attrib['threadName']+'")'
+        else:
+            return '\n.threads('+ poolSize+','+ maxPoolSize+')'
 
 if __name__ == "__main__":
     converter = Converter()
