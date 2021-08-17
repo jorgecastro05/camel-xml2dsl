@@ -257,6 +257,7 @@ class Converter:
         return 'language("'+ node.attrib['language']+'","'+ node.text +'")'
 
     def threads_def(self, node):
+        threads_def = None
         maxPoolSize = node.attrib['maxPoolSize'] if 'maxPoolSize' in node.attrib else None
         poolSize = node.attrib['poolSize'] if 'poolSize' in node.attrib else None
         if poolSize is None and maxPoolSize is not None:
@@ -264,9 +265,13 @@ class Converter:
         if poolSize is not None and maxPoolSize is None:
             maxPoolSize = poolSize
         if 'threadName' in node.attrib:
-            return '\n.threads('+ poolSize+','+ maxPoolSize+',"'+ node.attrib['threadName']+'")'
+            threads_def = '\n.threads('+ poolSize+','+ maxPoolSize+',"'+ node.attrib['threadName']+'")'
         else:
-            return '\n.threads('+ poolSize+','+ maxPoolSize+')'
+            threads_def = '\n.threads('+ poolSize+','+ maxPoolSize+')'
+
+        threads_def += self.analyze_node(node)
+        threads_def += "\n.end() //end threads"
+        return threads_def
 
 if __name__ == "__main__":
     converter = Converter()
