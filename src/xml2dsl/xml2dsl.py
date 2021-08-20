@@ -273,6 +273,11 @@ class Converter:
         threads_def += "\n.end() //end threads"
         return threads_def
 
+    def delay_def(self, node):
+        delay_def = '\n.delay().'
+        delay_def += self.analyze_node(node)
+        return delay_def
+
 if __name__ == "__main__":
     converter = Converter()
     converter.xml_to_dsl()
