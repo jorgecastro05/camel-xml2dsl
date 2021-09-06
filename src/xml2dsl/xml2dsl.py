@@ -251,7 +251,10 @@ class Converter:
         return ""
 
     def wireTap_def(self, node):
-        return '\n.wireTap("'+ node.attrib['uri'] +'")'
+        if 'executorServiceRef' in node.attrib:
+            return '\n.wireTap("'+ node.attrib['uri'] +'").executorServiceRef("profile")'
+        else:    
+            return '\n.wireTap("'+ node.attrib['uri'] +'")'
 
     def language_def(self, node):
         return 'language("'+ node.attrib['language']+'","'+ node.text +'")'
@@ -277,6 +280,24 @@ class Converter:
         delay_def = '\n.delay().'
         delay_def += self.analyze_node(node)
         return delay_def
+
+    def threadPoolProfile_def(self, node):
+        profileDef = '\nThreadPoolProfile profile = new ThreadPoolProfile();'
+        if 'defaultProfile' in node.attrib:
+            profileDef += '\nprofile.setDefaultProfile(true);'
+        if 'id' in node.attrib:
+            profileDef += '\nprofile.setId("threadPoolCrw15");'
+        if 'keepAliveTime' in node.attrib:
+            profileDef += '\nprofile.setKeepAliveTime(25L);'
+        if 'maxPoolSize' in node.attrib:
+            profileDef += '\nprofile.setMaxPoolSize(15);'
+        if 'maxQueueSize' in node.attrib:
+            profileDef += '\nprofile.setMaxQueueSize(250);'
+        if 'poolSize' in node.attrib:
+            profileDef += '\nprofile.setPoolSize(5);'
+        if 'rejectedPolicy' in node.attrib:
+            profileDef += '\nprofile.setRejectedPolicy(ThreadPoolRejectedPolicy.Abort);'
+        return profileDef
 
 if __name__ == "__main__":
     converter = Converter()
