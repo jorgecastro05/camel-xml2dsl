@@ -284,19 +284,20 @@ class Converter:
     def threadPoolProfile_def(self, node):
         profileDef = '\nThreadPoolProfile profile = new ThreadPoolProfile();'
         if 'defaultProfile' in node.attrib:
-            profileDef += '\nprofile.setDefaultProfile(true);'
+            profileDef += '\nprofile.setDefaultProfile('+ node.attrib['defaultProfile']+');'
         if 'id' in node.attrib:
-            profileDef += '\nprofile.setId("threadPoolCrw15");'
+            profileDef += '\nprofile.setId("'+ node.attrib['id']+'");'
         if 'keepAliveTime' in node.attrib:
-            profileDef += '\nprofile.setKeepAliveTime(25L);'
+            profileDef += '\nprofile.setKeepAliveTime('+ node.attrib['keepAliveTime']+'L);'
         if 'maxPoolSize' in node.attrib:
-            profileDef += '\nprofile.setMaxPoolSize(15);'
+            profileDef += '\nprofile.setMaxPoolSize('+ node.attrib['maxPoolSize'] +');'
         if 'maxQueueSize' in node.attrib:
-            profileDef += '\nprofile.setMaxQueueSize(250);'
+            profileDef += '\nprofile.setMaxQueueSize('+ node.attrib['maxQueueSize']+');'
         if 'poolSize' in node.attrib:
-            profileDef += '\nprofile.setPoolSize(5);'
+            profileDef += '\nprofile.setPoolSize('+ node.attrib['poolSize']+');'
         if 'rejectedPolicy' in node.attrib:
-            profileDef += '\nprofile.setRejectedPolicy(ThreadPoolRejectedPolicy.Abort);'
+            if node.attrib['rejectedPolicy'] == 'Abort':
+                profileDef += '\nprofile.setRejectedPolicy(ThreadPoolRejectedPolicy.Abort);'
         return profileDef
 
 if __name__ == "__main__":
