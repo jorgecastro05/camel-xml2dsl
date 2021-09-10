@@ -84,7 +84,10 @@ class Converter:
         return "//TODO: Aggregator"
     
     def recipientList_def(self, node):
-        return "//TODO: RecipientList"
+        recipient_def = "\n.recipientList()."
+        recipient_def += self.analyze_node(node)
+        recipient_def += ".end() // end recipientList"
+        return recipient_def
 
     def onException_def(self, node):
         exceptions = []
@@ -159,7 +162,8 @@ class Converter:
         return 'constant("' + node.text + '")'
 
     def groovy_def(self, node):
-        return 'groovy("' + node.text + '")'
+        text = node.text.replace('"','\'')
+        return 'groovy("' + text + '")'
 
     def xpath_def(self, node):
         xpath_def = 'xpath("' + node.text + '")'
