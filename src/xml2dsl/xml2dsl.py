@@ -30,8 +30,8 @@ class Converter:
             console.log(" XML 2 DSL Utility ", style="bold red")
             root = data.getroot()
             for camelContext in root.findall('camel:camelContext', ns):
-                console.log("processing camel context",
-                            camelContext.attrib['id'])
+                if 'id' in camelContext.attrib:
+                    console.log("processing camel context", camelContext.attrib['id'])
                 self.get_namespaces(camelContext)
                 self.dsl_route = self.analyze_node(camelContext)
                 print("dsl route:\n", self.dsl_route)
@@ -157,6 +157,9 @@ class Converter:
 
     def constant_def(self, node):
         return 'constant("' + node.text + '")'
+
+    def groovy_def(self, node):
+        return 'groovy("' + node.text + '")'
 
     def xpath_def(self, node):
         xpath_def = 'xpath("' + node.text + '")'
