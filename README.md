@@ -1,6 +1,6 @@
 # XML to DSL route
 
-![Image!](https://imgur.com/a/ppGuODw)
+![Image!](https://i.imgur.com/rlcS3pw.png)
 
 ## Installing the script:
 
