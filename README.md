@@ -1,5 +1,7 @@
 # XML to DSL route
 
+![Image!](https://imgur.com/a/ppGuODw)
+
 ## Installing the script:
 
     pip install camel_xml2dsl-0.0.x-py3-none-any.whl
