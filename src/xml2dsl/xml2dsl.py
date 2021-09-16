@@ -89,6 +89,26 @@ class Converter:
         recipient_def += ".end() // end recipientList"
         return recipient_def
 
+    def errorHandler_def(self, node):
+        if node.attrib['type'] == "DefaultErrorHandler":
+            return "\ndefaultErrorHandler().setRedeliveryPolicy(policy);"
+
+    def redeliveryPolicyProfile_def(self, node):
+        policy_def = "\nRedeliveryPolicy policy = new RedeliveryPolicy()"
+        if "maximumRedeliveries" in node.attrib:
+            policy_def += ".maximumRedeliveries("+ node.attrib["maximumRedeliveries"]+")"
+        if "retryAttemptedLogLevel" in node.attrib:
+            policy_def += ".retryAttemptedLogLevel(LoggingLevel." + node.attrib["retryAttemptedLogLevel"] +")"
+        if "redeliveryDelay" in node.attrib:
+            policy_def += ".redeliveryDelay("+ node.attrib["redeliveryDelay"] +")"
+        if "logRetryAttempted" in node.attrib:
+            policy_def += ".logRetryAttempted("+node.attrib["logRetryAttempted"] +")"
+        if  "logRetryStackTrace" in node.attrib:
+            policy_def += ".logRetryStackTrace("+node.attrib["logRetryStackTrace"]+")"
+        policy_def += ";"
+        return policy_def
+
+
     def onException_def(self, node):
         exceptions = []
         for exception in node.findall("camel:exception", ns):
@@ -113,6 +133,8 @@ class Converter:
                 redeliveryPolicy.attrib['retriesExhaustedLogLevel'] + \
                 ')' if 'retriesExhaustedLogLevel' in redeliveryPolicy.attrib else ""
             node.remove(redeliveryPolicy)
+        if "redeliveryPolicyRef" in node.attrib:
+            onException_def += ".redeliveryPolicy(policy)"    
         onException_def += self.analyze_node(node)
         onException_def += "\n.end();\n"
         return onException_def
@@ -134,7 +156,7 @@ class Converter:
         if 'loggingLevel' in node.attrib:
             return '\n.log(LoggingLevel.' + node.attrib['loggingLevel'] + ', "' + node.attrib['message'] + '")'
         else:
-            return '\n.log(' + node.attrib['message'] + '")'
+            return '\n.log("' + node.attrib['message'] + '")'
 
     def choice_def(self, node):
         choice_def = '\n.choice() //' + str(node.sourceline)
@@ -153,10 +175,14 @@ class Converter:
         return '\n.otherwise()' + self.analyze_node(node)
 
     def simple_def(self, node):
+        simple_def = ""
         if node.text is not None:
-            return 'simple("' + node.text + '")'
+            simple_def = 'simple("' + node.text + '")'
         else:
-            return 'simple("")'
+            simple_def = 'simple("")'
+        if "resultType" in node.attrib:
+            simple_def += ".resultType("+ node.attrib["resultType"]+".class)"
+        return simple_def
 
     def constant_def(self, node):
         return 'constant("' + node.text + '")'
@@ -306,6 +332,12 @@ class Converter:
             if node.attrib['rejectedPolicy'] == 'Abort':
                 profileDef += '\nprofile.setRejectedPolicy(ThreadPoolRejectedPolicy.Abort);'
         return profileDef
+
+
+    # Text deprecated processor for camel deprecated endpoints and features
+    # TODO: code
+    def deprecatedProcessor(text):
+        return text
 
 if __name__ == "__main__":
     converter = Converter()
