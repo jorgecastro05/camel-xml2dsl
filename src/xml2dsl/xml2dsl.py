@@ -3,6 +3,7 @@ from lxml import etree, objectify
 from rich import console
 from rich.console import Console
 import importlib.metadata
+import re
 
 __version__ = importlib.metadata.version('camel-xml2dsl')
 ns = {"camel": "http://camel.apache.org/schema/spring"}
@@ -154,9 +155,9 @@ class Converter:
 
     def log_def(self, node):
         if 'loggingLevel' in node.attrib:
-            return '\n.log(LoggingLevel.' + node.attrib['loggingLevel'] + ', "' + node.attrib['message'] + '")'
+            return '\n.log(LoggingLevel.' + node.attrib['loggingLevel'] + ', "' + self.deprecatedProcessor(node.attrib['message']) + '")'
         else:
-            return '\n.log("' + node.attrib['message'] + '")'
+            return '\n.log("' + self.deprecatedProcessor(node.attrib['message']) + '")'
 
     def choice_def(self, node):
         choice_def = '\n.choice() //' + str(node.sourceline)
@@ -177,7 +178,7 @@ class Converter:
     def simple_def(self, node):
         simple_def = ""
         if node.text is not None:
-            simple_def = 'simple("' + node.text + '")'
+            simple_def = 'simple("' + self.deprecatedProcessor(node.text) + '")'
         else:
             simple_def = 'simple("")'
         if "resultType" in node.attrib:
@@ -336,7 +337,8 @@ class Converter:
 
     # Text deprecated processor for camel deprecated endpoints and features
     # TODO: code
-    def deprecatedProcessor(text):
+    def deprecatedProcessor(self, text):
+        text = re.sub('\${property\.(\w+\.?\w+)}', r'${exchangeProperty.\1}', text) #exhange property in simple expressions
         return text
 
 if __name__ == "__main__":
