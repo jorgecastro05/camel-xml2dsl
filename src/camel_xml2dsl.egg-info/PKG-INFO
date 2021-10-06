@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: camel-xml2dsl
-Version: 0.0.15
+Version: 0.0.16
 Summary: xml definition to dsl definition routes
 Home-page: https://github.com/jorgecastro05/script-aro.git
 Author: Jorge Castro
@@ -16,6 +16,8 @@ Description-Content-Type: text/markdown
 License-File: LICENCE
 
 # XML to DSL route
+
+![Image!](https://i.imgur.com/rlcS3pw.png)
 
 ## Installing the script:
 

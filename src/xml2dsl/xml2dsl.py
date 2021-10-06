@@ -315,6 +315,9 @@ class Converter:
         delay_def += self.analyze_node(node)
         return delay_def
 
+    def javaScript_def(self, node):
+        return 'new JavaScriptExpression("'+ node.text +'")'
+
     def threadPoolProfile_def(self, node):
         profileDef = '\nThreadPoolProfile profile = new ThreadPoolProfile();'
         if 'defaultProfile' in node.attrib:
@@ -339,6 +342,8 @@ class Converter:
     # TODO: code
     def deprecatedProcessor(self, text):
         text = re.sub('\${property\.(\w+\.?\w+)}', r'${exchangeProperty.\1}', text) #exhange property in simple expressions
+        text = re.sub('"', "'", text) # replace all ocurrences from " to '
+        text = re.sub('\n', "", text) # remove all endlines
         return text
 
 if __name__ == "__main__":
