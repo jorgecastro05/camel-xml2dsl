@@ -24,6 +24,8 @@ class Converter:
             description="Transforms xml routes to dsl routes " + __version__)
         p.add_argument('--xml', metavar='xml', type=str,
                        help='xml camel context file', required=True, env_var='XML_CTX_INPUT')
+        p.add_argument('--beans', metavar='beans', type=str,
+                       help='use beans instead processors', required=False, env_var='USE_BEANS')
         args = p.parse_args()
         with open(args.xml, "r") as xml_file:
             parser = etree.XMLParser(remove_comments=True)
@@ -154,7 +156,7 @@ class Converter:
         return from_def
 
     def log_def(self, node):
-        if 'loggingLevel' in node.attrib:
+        if 'loggingLevel' in node.attrib and node.attrib['loggingLevel'] != 'INFO' :
             return '\n.log(LoggingLevel.' + node.attrib['loggingLevel'] + ', "' + self.deprecatedProcessor(node.attrib['message']) + '")'
         else:
             return '\n.log("' + self.deprecatedProcessor(node.attrib['message']) + '")'
@@ -203,9 +205,9 @@ class Converter:
 
     def to_def(self, node):
         if 'pattern' in node.attrib and 'InOnly' in node.attrib['pattern']:
-            return '\n.inOnly("' + node.attrib['uri'] + '")'
+            return '\n.inOnly("' + self.componentOptions(node.attrib['uri']) + '")'
         else:
-            return '\n.to("' + node.attrib['uri'] + '")'
+            return '\n.to("' + self.componentOptions(node.attrib['uri']) + '")'
 
     def setBody_def(self, node):
         setBody_predicate = self.analyze_element(node[0])
@@ -215,10 +217,16 @@ class Converter:
         return '\n.convertBodyTo('+ node.attrib['type'] + '.class)'
 
     def unmarshal_def(self, node):
-        return '\n.unmarshal()' + self.analyze_node(node)
+        if 'ref' in node.attrib:
+            return '\n.unmarshal("' + node.attrib['ref']+ '") //TODO: define dataformat'
+        else:
+            return '\n.unmarshal()' + self.analyze_node(node)
 
     def marshal_def(self, node):
-        return '\n.marshal()' + self.analyze_node(node)
+        if 'ref' in node.attrib:
+            return '\n.marshal("' + node.attrib['ref']+ '") //TODO: define dataformat'
+        else:    
+            return '\n.marshal()' + self.analyze_node(node)
 
     def jaxb_def(self, node):
         if 'prettyPrint' in node.attrib:
@@ -337,14 +345,38 @@ class Converter:
                 profileDef += '\nprofile.setRejectedPolicy(ThreadPoolRejectedPolicy.Abort);'
         return profileDef
 
+    def throwException_def(self, node):
+        throwException_def = ''
+        if 'ref' in node.attrib:
+            throwException_def = '\n.throwException(Exception.class, "' + node.attrib['ref']+ '")  //TODO: Please review throwException has changed with java DSL'
+        else:
+            throwException_def = '\n.throwException(Exception.class, "") //TODO: Please review throwException has changed with java DSL'
+        throwException_def += self.analyze_node(node)
+        return throwException_def
+
+    def spel_def(self, node):
+        return 'SpelExpression.spel("' + node.text + '")'
+
+    def loop_def(self, node):
+        loop_def = '\n.loop().'
+        loop_def += self.analyze_node(node)
+        loop_def = '\n.end() // end loop'
+        return loop_def
+        
 
     # Text deprecated processor for camel deprecated endpoints and features
-    # TODO: code
     def deprecatedProcessor(self, text):
         text = re.sub('\${property\.(\w+\.?\w+)}', r'${exchangeProperty.\1}', text) #exhange property in simple expressions
         text = re.sub('"', "'", text) # replace all ocurrences from " to '
         text = re.sub('\n', "", text) # remove all endlines
         return text
+
+    # Text processor for apply custom options in to endpoints
+    def componentOptions(self, text):
+        if "velocity:" in text:
+            text += "?contentCache=true"
+        return text
+
 
 if __name__ == "__main__":
     converter = Converter()
