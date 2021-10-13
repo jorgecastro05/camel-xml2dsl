@@ -360,7 +360,7 @@ class Converter:
     def loop_def(self, node):
         loop_def = '\n.loop().'
         loop_def += self.analyze_node(node)
-        loop_def = '\n.end() // end loop'
+        loop_def += '\n.end() // end loop'
         return loop_def
         
 
