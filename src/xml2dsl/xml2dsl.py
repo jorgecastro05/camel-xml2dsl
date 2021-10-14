@@ -9,12 +9,6 @@ __version__ = importlib.metadata.version('camel-xml2dsl')
 ns = {"camel": "http://camel.apache.org/schema/spring"}
 console = Console()
 
-# TODO:
-# jaxb dataformat as bean because dsl not support pretty print and context simultaneous
-# parallelProcessing support in split
-# todo components: aggregator, recipientlist
-
-
 class Converter:
     def __init__(self):
         self.dsl_route = ''
@@ -250,8 +244,14 @@ class Converter:
 
     def split_def(self, node):
         split_def = '\n.split().'
-        #if 'parallelProcessing' in node.attrib:
-        #    split_def += 'parallelProcessing().'
+        split_def += self.analyze_element(node[0])
+        if 'streaming' in node.attrib:
+            split_def += '.streaming()'
+        if 'strategyRef' in node.attrib:
+            split_def += '.aggregationStrategyRef("' + node.attrib["strategyRef"] + '")'
+        if 'parallelProcessing' in node.attrib:
+            split_def += '.parallelProcessing()'
+        node.remove(node[0]) # remove first child as was processed
         split_def += self.analyze_node(node)
         split_def += '\n.end() //end split'
         return split_def
