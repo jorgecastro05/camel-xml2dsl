@@ -14,6 +14,9 @@ Where x belongs to release version
 
 ## Building the project (for developers)
 
+### Install dependencies
+    
+    python3 -m pip install --upgrade build
     python -m build
     
 build and install

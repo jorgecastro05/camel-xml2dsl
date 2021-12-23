@@ -182,7 +182,10 @@ class Converter:
         return simple_def
 
     def constant_def(self, node):
-        return 'constant("' + node.text + '")'
+        if node.text is not None:
+            return 'constant("' + node.text + '")'
+        else:
+            return 'constant("")'
 
     def groovy_def(self, node):
         text = node.text.replace('"','\'')
@@ -196,6 +199,14 @@ class Converter:
         if 'saxon' in node.attrib:
             xpath_def += '.saxon()'
         return xpath_def
+
+
+    def jsonpath_def(self, node):
+        jsonpath_def = 'jsonpath("' + node.text + '")'
+        if 'resultType' in node.attrib:
+            jsonpath_def = 'jsonpath("' + node.text + '",' + \
+                node.attrib['resultType']+'.class)'
+        return jsonpath_def
 
     def to_def(self, node):
         if 'pattern' in node.attrib and 'InOnly' in node.attrib['pattern']:

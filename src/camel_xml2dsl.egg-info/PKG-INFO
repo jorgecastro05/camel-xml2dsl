@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: camel-xml2dsl
-Version: 0.0.19
+Version: 0.0.20
 Summary: xml definition to dsl definition routes
 Home-page: https://github.com/jorgecastro05/script-aro.git
 Author: Jorge Castro
@@ -31,6 +31,9 @@ Where x belongs to release version
 
 ## Building the project (for developers)
 
+### Install dependencies
+    
+    python3 -m pip install --upgrade build
     python -m build
     
 build and install
