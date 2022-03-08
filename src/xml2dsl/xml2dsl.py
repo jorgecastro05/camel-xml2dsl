@@ -239,6 +239,9 @@ class Converter:
         else:
             return '.jaxb("' + node.attrib['contextPath']+'")'
 
+    def base64_def(self,node):
+            return '.base64()'
+
     def setHeader_def(self, node):
         setHeader_predicate = self.analyze_element(node[0])
         return '\n.setHeader("'+node.attrib['headerName']+'",' + setHeader_predicate+')'
