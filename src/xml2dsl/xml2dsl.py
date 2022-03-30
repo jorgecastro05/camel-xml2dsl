@@ -76,9 +76,6 @@ class Converter:
             return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['beanType'] + '")'
         else:
             return '\n.bean("' + node.attrib['ref'] + '")'
-
-    def aggregator_def(self, node):
-        return "//TODO: Aggregator"
     
     def recipientList_def(self, node):
         recipient_def = "\n.recipientList()."
@@ -376,7 +373,19 @@ class Converter:
         loop_def += self.analyze_node(node)
         loop_def += '\n.end() // end loop'
         return loop_def
-        
+
+    def aggregate_def(self, node):
+        aggregate_def = '\n.aggregate()'
+        aggregate_def += self.analyze_element(node[0])
+        aggregate_def += '.completionTimeout('+ node.attrib['completionTimeout']+')'
+        aggregate_def += '.aggregationStrategyRef("'+ node.attrib['strategyRef']+'")'
+        node.remove(node[0]) # remove first child as was processed
+        aggregate_def += self.analyze_node(node)
+        aggregate_def += '\n.end() // end aggregate'
+        return aggregate_def
+
+    def correlationExpression_def(self, node):
+        return '.' + self.analyze_node(node)
 
     # Text deprecated processor for camel deprecated endpoints and features
     def deprecatedProcessor(self, text):
