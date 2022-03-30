@@ -387,6 +387,9 @@ class Converter:
     def correlationExpression_def(self, node):
         return '.' + self.analyze_node(node)
 
+    def tokenize_def(self, node):
+        return 'tokenize("'+ node.attrib['token'] +'")'
+
     # Text deprecated processor for camel deprecated endpoints and features
     def deprecatedProcessor(self, text):
         text = re.sub('\${property\.(\w+\.?\w+)}', r'${exchangeProperty.\1}', text) #exhange property in simple expressions
