@@ -86,6 +86,8 @@ class Converter:
     def errorHandler_def(self, node):
         if node.attrib['type'] == "DefaultErrorHandler":
             return "\ndefaultErrorHandler().setRedeliveryPolicy(policy);"
+        else:
+            return ""
 
     def redeliveryPolicyProfile_def(self, node):
         policy_def = "\nRedeliveryPolicy policy = new RedeliveryPolicy()"
