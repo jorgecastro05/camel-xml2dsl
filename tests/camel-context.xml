@@ -6,56 +6,13 @@
     xmlns:legdtl="http://www.lsb.de/apc/ops/legDetail"
     xmlns:osgix="http://www.springframework.org/schema/osgi-compendium"
     xmlns:trans="http://www.lsb.de/apc/ops/Transaction"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd         http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd         http://camel.apache.org/schema/cxf http://camel.apache.org/schema/cxf/camel-cxf.xsd         http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd         http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee.xsd         http://www.springframework.org/schema/osgi-compendium http://www.springframework.org/schema/osgi-compendium/spring-osgi-compendium.xsd">
-    <import resource="properties-beans.xml"/>
-    <!-- Enabled Spring Annotations -->
-    <ctx:annotation-config/>
-    <ctx:component-scan base-package="com.avianca.urfotron.*"/>
-    <bean class="org.slf4j.LoggerFactory" factory-method="getLogger" id="urfotron-log">
-        <constructor-arg index="0" value="Urfotron"/>
-    </bean>
-    <!-- call static method -->
-    <bean
-        class="org.springframework.beans.factory.config.MethodInvokingFactoryBean" id="test">
-        <property name="targetClass" value="org.slf4j.MDC"/>
-        <property name="targetMethod" value="put"/>
-        <property name="arguments">
-            <list>
-                <value>BT_Urfotron</value>
-                <value>Urfotron</value>
-            </list>
-        </property>
-    </bean>
-    <!-- Connect database -->
-    <jee:jndi-lookup expected-type="javax.sql.DataSource"
-        id="dsUrfotron" jndi-name="osgi:service/${jndi.name.datasource.urfotron}"/>
-    <bean class="org.apache.camel.component.sql.SqlComponent" id="sql">
-        <property name="dataSource" ref="dsUrfotron"/>
-    </bean>
-    <!-- End connect database -->
-    <bean class="com.avianca.urfotron.rest.processor.MappingProcessor" id="mappingProcessor"/>
-    <bean
-        class="com.avianca.urfotron.rest.processor.MappingSqlProcessor" id="mappingSqlProcessor"/>
-    <bean
-        class="com.avianca.urfotron.rest.processor.PrepareMailingNotificationProcessor" id="prepareMailingNotificationProcessor"/>
-    <!-- <cxf:rsServer id="restServer" address="${rest.server.url.path}" serviceClass="com.avianca.urfotron.rest.service.RestService" staticSubresourceResolution="true"> -->
-    <!-- <cxf:providers> -->
-    <!-- <bean class="com.fasterxml.jackson.jaxrs.json.JacksonJsonProvider" /> -->
-    <!-- </cxf:providers> -->
-    <!-- </cxf:rsServer> -->
-    <!-- <bean id="metric" class="org.apache.camel.component.metrics.MetricsComponent"> -->
-    <!-- <description>Camel Metrics Component</description> -->
-    <!-- </bean> -->
-    <!-- Use camel-metrics route policy to gather metrics for all routes -->
-    <bean
-        class="org.apache.camel.component.metrics.routepolicy.MetricsRoutePolicyFactory" id="metricsRoutePolicyFactory">
-        <property name="useJmx" value="true"/>
-    </bean>
-    <camelContext id="ctx-BT_Urfotron" messageHistory="true"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd         http://camel.apache.org/schema/cxf http://camel.apache.org/schema/cxf/camel-cxf.xsd         http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd         http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee.xsd         http://www.springframework.org/schema/osgi-compendium http://www.springframework.org/schema/osgi-compendium/spring-osgi-compendium.xsd">
+   
+    <camelContext id="ctx-BT_route" messageHistory="true"
         trace="false" typeConverterStatisticsEnabled="true"
         useMDCLogging="true" xmlns="http://camel.apache.org/schema/spring">
         <propertyPlaceholder id="propertiesRef" location="ref:props"/>
-        <!--         <propertyPlaceholder id="propertiesRef" location="ref:props"/> -->
         <endpoint id="rsServerEndpoint" uri="cxfrs://bean://restServer">
             <property key="bindingStyle" value="SimpleConsumer"/>
             <property key="loggingFeatureEnabled" value="{{rest.server.loggingFeatureEnabled}}"/>
@@ -66,7 +23,7 @@
             <handled>
                 <constant>true</constant>
             </handled>
-            <log id="logBodyRequest" loggerRef="urfotron-log"
+            <log id="logBodyRequest" loggerRef="route-log"
                 loggingLevel="ERROR" message="Exception: ${exception.message}, StackTrace: ${exception.stacktrace}"/>
             <to pattern="InOnly" uri="direct:CorreoSoporte"/>
         </onException>
@@ -77,54 +34,51 @@
             <handled>
                 <constant>true</constant>
             </handled>
-            <log loggerRef="urfotron-log" loggingLevel="ERROR" message="Headers: ${headers}"/>
-            <log loggerRef="urfotron-log" loggingLevel="ERROR" message="Exception Message: ${exception.message}"/>
-            <log loggerRef="urfotron-log" loggingLevel="ERROR" message="Exception Stack: ${exception.stacktrace}"/>
+            <log loggerRef="route-log" loggingLevel="ERROR" message="Headers: ${headers}"/>
+            <log loggerRef="route-log" loggingLevel="ERROR" message="Exception Message: ${exception.message}"/>
+            <log loggerRef="route-log" loggingLevel="ERROR" message="Exception Stack: ${exception.stacktrace}"/>
             <setProperty propertyName="errorMessage">
                 <simple>${exception.stacktrace}</simple>
             </setProperty>
             <to pattern="InOnly" uri="direct:CorreoSoporte"/>
-            <log loggerRef="urfotron-log" loggingLevel="ERROR" message="Response error: ${body}"/>
+            <log loggerRef="route-log" loggingLevel="ERROR" message="Response error: ${body}"/>
         </onException>
         <onException>
             <exception>java.sql.SQLIntegrityConstraintViolationException</exception>
-            <log loggerRef="urfotron-log" loggingLevel="ERROR" message="Error insertando el vuelo en la base de datos (Dato requerido Null)"/>
-            <log loggerRef="urfotron-log" loggingLevel="ERROR" message="Exception Message: ${exception.message}"/>
+            <log loggerRef="route-log" loggingLevel="ERROR" message="Error insertando el identifier en la base de datos (Dato requerido Null)"/>
+            <log loggerRef="route-log" loggingLevel="ERROR" message="Exception Message: ${exception.message}"/>
             <to pattern="InOnly" uri="direct:CorreoSoporte"/>
         </onException>
-        <route id="ROUTE_BT_URFOTRON" trace="true">
+        <route id="ROUTE_BT_route" trace="true">
             <description>Receive a message from a queue</description>
-            <!--             <from id="_from1" uri="{{aval2dtron.legdetail.queue.from}}"/> -->
-            <!-- <from uri="direct:urfotron" id="restFrom" /> -->
-            <from id="_from1" uri="{{ava2ldtron.legdetail.queue.from}}"/>
-            <log id="_log1" loggerRef="urfotron-log" loggingLevel="INFO" message=":::: INICIA LA RUTA URFOTRON :::::"/>
+            <from id="_from1" uri="{{identifier.queue.from}}"/>
+            <log id="_log1" loggerRef="route-log" loggingLevel="INFO" message=":::: INICIA LA RUTA route :::::"/>
             <choice id="_choice1">
                 <when id="_when1">
                     <simple>${body} != ''</simple>
                     <setProperty id="_setProperty1" propertyName="xmlFromQueue">
                         <simple>${body}</simple>
                     </setProperty>
-                    <log id="_log2" loggerRef="urfotron-log"
+                    <log id="_log2" loggerRef="route-log"
                         loggingLevel="INFO" message="Mensaje de AMQ: \n ${property.xmlFromQueue}"/>
-                    <setHeader headerName="LegNo" id="_setHeader1">
-                        <xpath resultType="java.lang.String" saxon="true">//identifier/surrogateKey/legNo</xpath>
+                    <setHeader headerName="identifier" id="_setHeader1">
+                        <xpath resultType="java.lang.String" saxon="true">//example</xpath>
                     </setHeader>
-                    <log id="_log3" loggerRef="urfotron-log"
-                        loggingLevel="INFO" message="LegNo para realizar la consulta: ${header.LegNo}"/>
+                    <log id="_log3" loggerRef="route-log"
+                        loggingLevel="INFO" message="identifier para realizar la consulta: ${header.identifier}"/>
                     <unmarshal id="_unmarshal1">
                         <description>UnMarshalling</description>
                         <jaxb
-                            contextPath="com.avianca.urfotron.rest.dto" prettyPrint="true"/>
+                            contextPath="com.avianca.route.rest.dto" prettyPrint="true"/>
                     </unmarshal>
                     <setHeader headerName="unmarshall" id="_setHeader2">
                         <simple>${body}</simple>
                     </setHeader>
-                    <log id="_log4" loggerRef="urfotron-log"
-                        loggingLevel="INFO" message="Consulta a realizar: \n {{sql.query.urfotron.select}} con LegNo = ${header.LegNo}"/>
-                    <to id="_to1" uri="sql:{{sql.query.urfotron.select}}"/>
+                    <log id="_log4" loggerRef="route-log"
+                        loggingLevel="INFO" message="Consulta a realizar: \n {{sql.query.route.select}} con identifier = ${header.identifier}"/>
+                    <to id="_to1" uri="sql:{{sql.query.route.select}}"/>
                     <choice id="_choice2">
                         <when id="_when2">
-                            <!-- 							<log loggerRef="urfotron-log" loggingLevel="INFO" message="La consulta realizada tiene los siguientes datos:\n ${body}" /> -->
                             <simple>${bodyAs(String)} != '[]'</simple>
                             <setProperty id="_setProperty2" propertyName="bodySql">
                                 <simple>${body[0]}</simple>
@@ -132,60 +86,60 @@
                             <setBody id="_setBody1">
                                 <simple>${header.unmarshall}</simple>
                             </setBody>
-                            <log id="_log5" loggerRef="urfotron-log"
+                            <log id="_log5" loggerRef="route-log"
                                 loggingLevel="INFO" message="Procesamiento para la data recibida"/>
                             <process id="_process1" ref="mappingSqlProcessor"/>
-                            <log id="_log6" loggerRef="urfotron-log"
+                            <log id="_log6" loggerRef="route-log"
                                 loggingLevel="INFO" message="Headers query: ${header.queryUpdate} "/>
-                            <log id="_log7" loggerRef="urfotron-log"
-                                loggingLevel="INFO" message="++ ${header.LegNo} ++"/>
-                            <to id="_to2" uri="jdbc://dsUrfotron"/>
-                            <log id="_log8" loggerRef="urfotron-log"
+                            <log id="_log7" loggerRef="route-log"
+                                loggingLevel="INFO" message="++ ${header.identifier} ++"/>
+                            <to id="_to2" uri="jdbc://dsroute"/>
+                            <log id="_log8" loggerRef="route-log"
                                 loggingLevel="INFO" message="Update count es ${header.CamelJdbcUpdateCount}"/>
-                            <log id="_log9" loggerRef="urfotron-log"
+                            <log id="_log9" loggerRef="route-log"
                                 loggingLevel="INFO" message="Se realizó el Update Exitosamente"/>
                             <setHeader headerName="legDetLog" id="_setHeader3">
                                 <simple resultType="String">${property.xmlFromQueue}</simple>
                             </setHeader>
-                            <to id="_to3" uri="sql:{{sql.query.urfotron.insert.legdet}}"/>
-                            <log id="_log10" loggerRef="urfotron-log"
-                                loggingLevel="INFO" message="Se realizó el Insert en LEGDET_LOG Exitosamente"/>
+                            <to id="_to3" uri="sql:{{sql.query.route.insert}}"/>
+                            <log id="_log10" loggerRef="route-log"
+                                loggingLevel="INFO" message="Se realizó el Insert en Exitosamente"/>
                         </when>
                         <otherwise id="_otherwise1">
                             <description>Insert Nuevo registro en BD</description>
                             <setBody id="_setBody2">
                                 <simple>${header.unmarshall}</simple>
                             </setBody>
-                            <log id="_log11" loggerRef="urfotron-log"
+                            <log id="_log11" loggerRef="route-log"
                                 loggingLevel="INFO" message="No existe data en BD se realizara Insert"/>
-                            <log id="_log12" loggerRef="urfotron-log"
+                            <log id="_log12" loggerRef="route-log"
                                 loggingLevel="INFO" message="Inicia proceso para inserción"/>
                             <process id="_process3" ref="mappingProcessor"/>
-                            <log id="_log13" loggerRef="urfotron-log"
-                                loggingLevel="INFO" message="Insert BD UNIREC.VUELO: \n {{sql.query.urfotron.insert}}"/>
-                            <to id="_to4" uri="sql:{{sql.query.urfotron.insert}}"/>
-                            <log id="_log14" loggerRef="urfotron-log"
+                            <log id="_log13" loggerRef="route-log"
+                                loggingLevel="INFO" message="Insert BD: \n {{sql.query.route.insert}}"/>
+                            <to id="_to4" uri="sql:{{sql.query.route.insert}}"/>
+                            <log id="_log14" loggerRef="route-log"
                                 loggingLevel="INFO" message="Se realizó el Insert Exitosamente"/>
                             <setHeader headerName="legDetLog" id="_setHeader4">
                                 <simple resultType="String">${property.xmlFromQueue}</simple>
                             </setHeader>
-                            <to id="_to5" uri="sql:{{sql.query.urfotron.insert.legdet}}"/>
-                            <log id="_log15" loggerRef="urfotron-log"
-                                loggingLevel="INFO" message="Se realizó el Insert en LEGDET_LOG Exitosamente"/>
+                            <to id="_to5" uri="sql:{{sql.query.route.insert.legdet}}"/>
+                            <log id="_log15" loggerRef="route-log"
+                                loggingLevel="INFO" message="Se realizó el Insert en Exitosamente"/>
                         </otherwise>
                     </choice>
                 </when>
                 <otherwise id="_otherwise2">
-                    <log id="_log16" loggerRef="urfotron-log"
+                    <log id="_log16" loggerRef="route-log"
                         loggingLevel="ERROR" message="No existe mensaje de entrada"/>
                 </otherwise>
             </choice>
-            <log id="_log17" loggerRef="urfotron-log"
-                loggingLevel="INFO" message=":::::RUTA URFOTRON FINALIZADA EXITOSAMENTE::::"/>
+            <log id="_log17" loggerRef="route-log"
+                loggingLevel="INFO" message=":::::RUTA route FINALIZADA EXITOSAMENTE::::"/>
         </route>
         <route id="MailNotification">
             <from id="_from2" uri="direct:CorreoSoporte"/>
-            <log id="_log18" loggerRef="urfotron-log"
+            <log id="_log18" loggerRef="route-log"
                 loggingLevel="DEBUG" message="Notificando el Error => ${property.errorMessage}"/>
             <setHeader headerName="DescripcionError" id="_setHeader5">
                 <simple>${property.errorMessage}</simple>
@@ -211,52 +165,9 @@
             <process id="_process2" ref="prepareMailingNotificationProcessor">
                 <description>Create request to send to notification queue</description>
             </process>
-            <log id="_log35" loggerRef="urfotron-log"
+            <log id="_log35" loggerRef="route-log"
                 loggingLevel="WARN" message="Enviando mensaje a la JMS de Notificaciones: ${body}"/>
             <inOnly id="_inOnly1" uri="{{mail.notification.queue.name}}"/>
-            <!-- <to id="_to15" pattern="InOnly" uri="ref:mailFromEndpoint" /> -->
         </route>
     </camelContext>
-    <bean class="org.apache.camel.spring.spi.SpringTransactionPolicy" id="required">
-        <property name="transactionManager" ref="jmsTransactionManager"/>
-        <property name="propagationBehaviorName" value="PROPAGATION_REQUIRED"/>
-    </bean>
-    <bean
-        class="org.springframework.jms.connection.JmsTransactionManager" id="jmsTransactionManager">
-        <property name="connectionFactory" ref="jmsConnectionFactory"/>
-    </bean>
-    <bean class="org.apache.activemq.ActiveMQConnectionFactory" id="jmsConnectionFactory">
-        <property name="brokerURL" value="${AMQ.brokerURL}"/>
-        <property name="userName" value="${AMQ.userName}"/>
-        <property name="password" value="${AMQ.password}"/>
-        <property name="redeliveryPolicy">
-            <bean class="org.apache.activemq.RedeliveryPolicy">
-                <property name="maximumRedeliveries" value="-1"/>
-                <property name="useExponentialBackOff" value="true"/>
-                <property name="backOffMultiplier" value="2"/>
-                <property name="maximumRedeliveryDelay" value="60000"/>
-            </bean>
-        </property>
-    </bean>
-    <bean class="org.apache.camel.component.jms.JmsConfiguration" id="jmsConfiguration">
-        <property name="connectionFactory" ref="pooledConnectionFactory"/>
-        <!-- <property name="concurrentConsumers" value="1" /> -->
-        <property name="requestTimeout" value="10000"/>
-        <property name="cacheLevelName" value="CACHE_CONSUMER"/>
-        <property name="transacted" value="true"/>
-    </bean>
-    <bean class="org.apache.camel.component.jms.JmsComponent" id="jms">
-        <property name="configuration" ref="jmsConfiguration"/>
-    </bean>
-    <bean class="org.apache.activemq.camel.component.ActiveMQComponent" id="activemq">
-        <property name="Configuration" ref="jmsConfiguration"/>
-    </bean>
-    <bean class="org.apache.activemq.pool.PooledConnectionFactory"
-        destroy-method="stop" id="pooledConnectionFactory" init-method="start">
-        <property name="maxConnections" value="10"/>
-        <property name="maximumActiveSessionPerConnection" value="60"/>
-        <property name="blockIfSessionPoolIsFull" value="false"/>
-        <property name="blockIfSessionPoolIsFullTimeout" value="10000"/>
-        <property name="connectionFactory" ref="jmsConnectionFactory"/>
-    </bean>
 </beans>
