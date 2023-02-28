@@ -49,8 +49,21 @@
             <log loggerRef="route-log" loggingLevel="ERROR" message="Exception Message: ${exception.message}"/>
             <to pattern="InOnly" uri="direct:CorreoSoporte"/>
         </onException>
+        <restConfiguration bindingMode="off" component="servlet" contextPath="/api/rest" port="8083">
+            <componentProperty key="servletName" value="OrderServlet"/>
+            <dataFormatProperty key="prettyPrint" value="true"/>
+        </restConfiguration>
+        <rest path="/order">
+            <get bindingMode="json" produces="application/json" type="com.demo.GetRequest" uri="/get">
+                <to uri="direct:order"/>
+            </get>
+            <post bindingMode="json" produces="application/json" type="com.demo.PostRequest" uri="/post">
+                <description>Test POST request</description>
+                <param name="body" type="body" description="The user to update or create"/>
+                <to uri="direct:updateOrder-close"/>
+            </post>
+        </rest>
         <route id="ROUTE_BT_route" trace="true">
-            <description>Receive a message from a queue</description>
             <from id="_from1" uri="{{identifier.queue.from}}"/>
             <log id="_log1" loggerRef="route-log" loggingLevel="INFO" message=":::: INICIA LA RUTA route :::::"/>
             <choice id="_choice1">
@@ -61,17 +74,17 @@
                     </setProperty>
                     <log id="_log2" loggerRef="route-log"
                         loggingLevel="INFO" message="Mensaje de AMQ: \n ${property.xmlFromQueue}"/>
-                    <setHeader headerName="identifier" id="_setHeader1">
+                    <setHeader name="identifier" id="_setHeader1">
                         <xpath resultType="java.lang.String" saxon="true">//example</xpath>
                     </setHeader>
-                    <log id="_log3" loggerRef="route-log"
+                    <log id="_log3"  loggerRef="route-log"
                         loggingLevel="INFO" message="identifier para realizar la consulta: ${header.identifier}"/>
                     <unmarshal id="_unmarshal1">
                         <description>UnMarshalling</description>
                         <jaxb
                             contextPath="com.avianca.route.rest.dto" prettyPrint="true"/>
                     </unmarshal>
-                    <setHeader headerName="unmarshall" id="_setHeader2">
+                    <setHeader name="unmarshall">
                         <simple>${body}</simple>
                     </setHeader>
                     <log id="_log4" loggerRef="route-log"
@@ -83,6 +96,7 @@
                             <setProperty id="_setProperty2" propertyName="bodySql">
                                 <simple>${body[0]}</simple>
                             </setProperty>
+                            <setExchangePattern pattern=""
                             <setBody id="_setBody1">
                                 <simple>${header.unmarshall}</simple>
                             </setBody>
@@ -168,6 +182,30 @@
             <log id="_log35" loggerRef="route-log"
                 loggingLevel="WARN" message="Enviando mensaje a la JMS de Notificaciones: ${body}"/>
             <inOnly id="_inOnly1" uri="{{mail.notification.queue.name}}"/>
+        </route>
+        <route>
+            <from uri="direct:do-try-test"/>
+            <doTry>
+                <doTry>
+                    <throwException id="throwException1"/>
+                    <doCatch id="doCatch1">
+                        <log id="log1" message="doCatch 1"/>
+                        <throwException id="throwException2"/>
+                    </doCatch>
+                </doTry>
+                <doCatch id="doCatch2">
+                    <log id="log2" message="doCatch 2"/>
+                </doCatch>
+                <doCatch>
+                    <onWhen>
+                        <simple>${exception.message} contains 'foo'</simple>
+                    </onWhen>
+                    <log id="log2" message="doCatch 3"/>
+                </doCatch>
+                <doFinally>
+                    <log id="log2" message="doFinally"/>
+                </doFinally>
+            </doTry>
         </route>
     </camelContext>
 </beans>

@@ -4,14 +4,58 @@ from rich import console
 from rich.console import Console
 import importlib.metadata
 import re
+import sys
 
 __version__ = importlib.metadata.version('camel-xml2dsl')
-ns = {"camel": "http://camel.apache.org/schema/spring"}
+ns = {
+    "camel": "http://camel.apache.org/schema/spring",
+    "beans": "http://www.springframework.org/schema/beans"
+}
+
 console = Console()
 
+
 class Converter:
+
+    GROOVY_TEMPLATE = '''
+        String groovy_>>> index <<< = >>> transformed <<< 
+'''
+
+    BEAN_TEMPLATE = '''
+    @Autowired
+    >>> bean type <<< >>> bean name <<<;
+'''
+
+    CLASS_TEMPLATE = '''
+///////////////
+package xml2dsl;
+
+import org.apache.camel.ExchangePattern;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.model.dataformat.JsonDataFormat;
+import org.apache.camel.model.dataformat.JsonLibrary;
+import org.apache.camel.model.rest.RestBindingMode;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+@Component
+public class >>> class name <<< extends RouteBuilder {
+>>> beans <<<
+
+    @Override
+    public void configure() {
+>>> groovy transformations <<<
+        >>> routes <<<
+    }
+}
+    '''
+
     def __init__(self):
         self.dsl_route = ''
+        self.endpoints = {}
+        self.bean_refs = {}
+        self.indentation = 2
+        self.groovy_transformations = {}
 
     def xml_to_dsl(self):
         p = configargparse.ArgParser(
@@ -26,41 +70,113 @@ class Converter:
             data = objectify.parse(xml_file, parser=parser)
             console.log(" XML 2 DSL Utility ", style="bold red")
             root = data.getroot()
-            for camelContext in root.findall('camel:camelContext', ns):
+
+            # Beans
+            bean_definitions = []
+            for bean in root.findall('.//beans:bean', ns):
+                name = bean.attrib['id']
+                bean_type = bean.attrib['class']
+                if 'PropertyPlaceholderConfigurer' in bean_type:
+                    continue
+
+                self.bean_refs[name] = bean_type
+
+                bean = Converter.BEAN_TEMPLATE \
+                    .replace('>>> bean type <<<', bean_type) \
+                    .replace('>>> bean name <<<', name)
+
+                bean_definitions.append(bean)
+
+            # Multiline groovy transforms
+            for idx, node in enumerate(root.findall('.//camel:groovy', ns)):
+                code_hash, text = self.preformat_groovy_transformation(node)
+                transformed = Converter.GROOVY_TEMPLATE \
+                    .replace('>>> index <<<', str(idx)) \
+                    .replace('>>> transformed <<<', ' + \n'.join(self.process_multiline_groovy(text)) + ';')
+
+                self.groovy_transformations[code_hash] = {
+                    'index': idx,
+                    'transformation': transformed
+                }
+
+            # Camel Contexts
+            for idx, camelContext in enumerate(root.findall('camel:camelContext', ns)):
                 if 'id' in camelContext.attrib:
                     console.log("processing camel context", camelContext.attrib['id'])
-                self.get_namespaces(camelContext)
-                self.dsl_route = self.analyze_node(camelContext)
-                print("dsl route:\n", self.dsl_route)
 
-    def get_namespaces(self, node):
+                class_name = camelContext.attrib['id'] if 'id' in camelContext.attrib else f'camelContext{str(idx)}'
+                class_name = class_name.capitalize()
+
+                self.get_namespaces(camelContext)
+                self.dsl_route += self.analyze_node(camelContext)
+
+            groovy_transformations = '\n\n'.join([v['transformation'] for k, v in self.groovy_transformations.items()])
+
+            dsl_route = Converter.CLASS_TEMPLATE \
+                .replace(">>> groovy transformations <<<", groovy_transformations) \
+                .replace(">>> beans <<<", ''.join(bean_definitions)) \
+                .replace(">>> class name <<<", class_name) \
+                .replace(">>> routes <<<", self.dsl_route)
+
+            print("dsl route:\n", dsl_route)
+
+    @staticmethod
+    def get_namespaces(node):
         console.log("namespaces:", node.nsmap)
 
     def analyze_node(self, node):
         dslText = ""
         for child in node:
-            node_name = child.tag.partition('}')[2] + "_def"
-            console.log("procesing node", node_name, child.tag, child.sourceline)
-            dslText += getattr(self, node_name)(child)
+            node_name = child.tag.partition('}')[2]
+
+            # Skip property placeholders
+            if node_name == 'propertyPlaceholder':
+                continue
+
+            process_function_name = node_name + "_def"
+            console.log("processing node", node_name, child.tag, child.sourceline)
+            next_node = getattr(self, process_function_name, None)
+            if next_node is None:
+                console.log("unknown node", process_function_name, child.sourceline)
+                sys.exit(1)
+            dslText += getattr(self, process_function_name)(child)
         return dslText
 
     def analyze_element(self, node):
         node_name = node.tag.partition('}')[2] + "_def"
-        console.log("procesing node", node_name, node.tag, node.sourceline)
+        console.log("processing node", node_name, node.tag, node.sourceline)
         return getattr(self, node_name)(node)
 
     def route_def(self, node):
         route_def = self.analyze_node(node)
-        route_def += "\n.end();\n"
+        route_def += self.indent('.end();\n')
+        self.indentation -= 1
         return route_def
 
-    def propertyPlaceholder_def(self, node):
-        return ""
-
     def dataFormats_def(self, node):
-        return '\n//TODO: define dataformat ' + node[0].tag + '\n'
+        dataformats = self.analyze_node(node)
+        return dataformats
+
+    def json_def(self, node):
+        name = node.attrib['id']
+        library = f'JsonLibrary.{node.attrib["library"]}' if 'library' in node.attrib else ''
+
+        json_dataformat = ''
+
+        if 'jsonView' in node.attrib and node.attrib['jsonView'] == 'true':
+            json_dataformat = self.indent('// TODO: Review jsonView for this data format')
+
+        json_dataformat += self.indent(f'JsonDataFormat {name} = new JsonDataFormat({library});')
+
+        if 'unmarshalTypeName' in node.attrib:
+            json_dataformat += self.indent(f'{name}.unmarshalType({node.attrib["unmarshalTypeName"]}.class);')
+
+        return json_dataformat + '\n'
 
     def endpoint_def(self, node):
+        endpoint_id = node.attrib['id']
+        uri = node.attrib['uri']
+        self.endpoints[endpoint_id] = uri
         return ""
 
     def multicast_def(self, node):
@@ -68,15 +184,12 @@ class Converter:
         multicast_def += self.analyze_node(node)
         multicast_def += "\n.end() //end multicast"
         return multicast_def
-    
+
     def bean_def(self, node):
-        if 'method' in node.attrib:
-            return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['method'] + '")'
-        elif 'beanType' in node.attrib:
-            return '\n.bean("' + node.attrib['ref'] + '","'+ node.attrib['beanType'] + '")'
-        else:
-            return '\n.bean("' + node.attrib['ref'] + '")'
-    
+        ref = node.attrib['ref']
+        method = node.attrib['method']
+        return self.indent(f'.bean({self.bean_refs[ref]}.class, "{method}")')
+
     def recipientList_def(self, node):
         recipient_def = "\n.recipientList()."
         recipient_def += self.analyze_node(node)
@@ -85,25 +198,24 @@ class Converter:
 
     def errorHandler_def(self, node):
         if node.attrib['type'] == "DefaultErrorHandler":
-            return "\ndefaultErrorHandler().setRedeliveryPolicy(policy);"
+            return self.indent('defaultErrorHandler().setRedeliveryPolicy(policy);')
         else:
             return ""
 
     def redeliveryPolicyProfile_def(self, node):
         policy_def = "\nRedeliveryPolicy policy = new RedeliveryPolicy()"
         if "maximumRedeliveries" in node.attrib:
-            policy_def += ".maximumRedeliveries("+ node.attrib["maximumRedeliveries"]+")"
+            policy_def += ".maximumRedeliveries(" + node.attrib["maximumRedeliveries"] + ")"
         if "retryAttemptedLogLevel" in node.attrib:
-            policy_def += ".retryAttemptedLogLevel(LoggingLevel." + node.attrib["retryAttemptedLogLevel"] +")"
+            policy_def += ".retryAttemptedLogLevel(LoggingLevel." + node.attrib["retryAttemptedLogLevel"] + ")"
         if "redeliveryDelay" in node.attrib:
-            policy_def += ".redeliveryDelay("+ node.attrib["redeliveryDelay"] +")"
+            policy_def += ".redeliveryDelay(" + node.attrib["redeliveryDelay"] + ")"
         if "logRetryAttempted" in node.attrib:
-            policy_def += ".logRetryAttempted("+node.attrib["logRetryAttempted"] +")"
-        if  "logRetryStackTrace" in node.attrib:
-            policy_def += ".logRetryStackTrace("+node.attrib["logRetryStackTrace"]+")"
+            policy_def += ".logRetryAttempted(" + node.attrib["logRetryAttempted"] + ")"
+        if "logRetryStackTrace" in node.attrib:
+            policy_def += ".logRetryStackTrace(" + node.attrib["logRetryStackTrace"] + ")"
         policy_def += ";"
         return policy_def
-
 
     def onException_def(self, node):
         exceptions = []
@@ -111,180 +223,214 @@ class Converter:
             exceptions.append(exception.text + ".class")
             node.remove(exception)
         exceptions = ','.join(exceptions)
-        onException_def = '\nonException(' + exceptions + ')'
+        onException_def = self.indent('onException(' + exceptions + ')')
+
+        indented = False
+
         handled = node.find("camel:handled", ns)
         if handled is not None:
-            onException_def += '.handled(' + handled[0].text + ')'
+            if not indented:
+                self.indentation += 1
+                indented = True
+
+            onException_def += self.indent('.handled(' + handled[0].text + ')')
+
             node.remove(handled)
-        redeliveryPolicy = node.find("camel:redeliveryPolicy", ns)
+
+        redeliveryPolicy = node.find('camel:redeliveryPolicy', ns)
         if redeliveryPolicy is not None:
-            onException_def += '\n.maximumRedeliveries('+redeliveryPolicy.attrib['maximumRedeliveries'] + \
-                ')' if 'maximumRedeliveries' in redeliveryPolicy.attrib else ""
-            onException_def += '\n.redeliveryDelay('+redeliveryPolicy.attrib['redeliveryDelay'] + \
-                ')' if 'redeliveryDelay' in redeliveryPolicy.attrib else ""
-            onException_def += '\n.retryAttemptedLogLevel(LoggingLevel.' + \
-                redeliveryPolicy.attrib['retryAttemptedLogLevel'] + \
-                ')' if 'retryAttemptedLogLevel' in redeliveryPolicy.attrib else ""
-            onException_def += '\n.retriesExhaustedLogLevel(LoggingLevel.' + \
-                redeliveryPolicy.attrib['retriesExhaustedLogLevel'] + \
-                ')' if 'retriesExhaustedLogLevel' in redeliveryPolicy.attrib else ""
+            if not indented:
+                self.indentation += 1
+                indented = True
+
+            onException_def += self.indent('.maximumRedeliveries(' + redeliveryPolicy.attrib['maximumRedeliveries'] +
+                                           ')' if 'maximumRedeliveries' in redeliveryPolicy.attrib else '')
+            onException_def += self.indent('.redeliveryDelay(' + redeliveryPolicy.attrib['redeliveryDelay'] +
+                                           ')' if 'redeliveryDelay' in redeliveryPolicy.attrib else '')
+            onException_def += self.indent('.retryAttemptedLogLevel(LoggingLevel.' +
+                                           redeliveryPolicy.attrib['retryAttemptedLogLevel'] + \
+                                           ')' if 'retryAttemptedLogLevel' in redeliveryPolicy.attrib else '')
+            onException_def += self.indent('.retriesExhaustedLogLevel(LoggingLevel.' +
+                                           redeliveryPolicy.attrib['retriesExhaustedLogLevel'] +
+                                           ')' if 'retriesExhaustedLogLevel' in redeliveryPolicy.attrib else '')
             node.remove(redeliveryPolicy)
-        if "redeliveryPolicyRef" in node.attrib:
-            onException_def += ".redeliveryPolicy(policy)"    
+
+        if 'redeliveryPolicyRef' in node.attrib:
+            onException_def += self.indent('.redeliveryPolicy(policy)')
+
         onException_def += self.analyze_node(node)
-        onException_def += "\n.end();\n"
+        onException_def += self.indent('.end();\n')
+
+        if indented:
+            self.indentation -= 1
+
         return onException_def
 
     def description_def(self, node):
-        if node.text:
-           return "//" + node.text + "\n"
-        else:
-            return ""
+        return self.indent(f'.description("{node.text}")')
 
     def from_def(self, node):
-        routeId = node.getparent().attrib['id']
-        routeFrom = node.attrib['uri']
-        from_def = '\nfrom("' + routeFrom+'").routeId("' + routeId + '")'
+        routeFrom = self.deprecatedProcessor(node.attrib['uri'])
+        routeId = node.getparent().attrib['id'] if 'id' in node.getparent().keys() else routeFrom
+        from_def = self.indent(f'from("{routeFrom}")')
+        self.indentation += 1
+        from_def += self.indent(f'.routeId("{routeId}")')
         from_def += self.analyze_node(node)
         return from_def
 
     def log_def(self, node):
-        if 'loggingLevel' in node.attrib and node.attrib['loggingLevel'] != 'INFO' :
-            return '\n.log(LoggingLevel.' + node.attrib['loggingLevel'] + ', "' + self.deprecatedProcessor(node.attrib['message']) + '")'
+        if 'loggingLevel' in node.attrib and node.attrib['loggingLevel'] != 'INFO':
+            return self.indent('.log(LoggingLevel.' + node.attrib['loggingLevel'] + ', "' +
+                               self.deprecatedProcessor(node.attrib['message']) + '")')
         else:
-            return '\n.log("' + self.deprecatedProcessor(node.attrib['message']) + '")'
+            return self.indent('.log("' + self.deprecatedProcessor(node.attrib['message']) + '")')
 
     def choice_def(self, node):
-        choice_def = '\n.choice() //' + str(node.sourceline)
+        choice_def = self.indent(f'.choice() // (source line: {str(node.sourceline)})')
+        self.indentation += 1
         choice_def += self.analyze_node(node)
-        parent = node.getparent()
-        if parent.tag != '{'+ns['camel']+'}route':
-            choice_def += "\n.endChoice() //" + str(node.sourceline)
-        else:
-            choice_def += "\n.end() //end choice " + str(node.sourceline)
+        self.indentation -= 1
+
+        choice_def += self.indent(f'.end() // end choice (source line: {str(node.sourceline)})')
+
         return choice_def
 
     def when_def(self, node):
-        return '\n.when().' + self.analyze_node(node)
+        when_def = self.indent('.when(' + self.analyze_element(node[0]) + ')')
+        node.remove(node[0])
+        self.indentation += 1
+        when_def += self.analyze_node(node)
+        self.indentation -= 1
+        when_def += self.indent(f'.endChoice() // (source line: {str(node.sourceline)})')
+        return when_def
 
     def otherwise_def(self, node):
-        return '\n.otherwise()' + self.analyze_node(node)
+        otherwise_def = self.indent('.otherwise()')
+        self.indentation += 1
+        otherwise_def += self.analyze_node(node)
+        self.indentation -= 1
+        otherwise_def += self.indent(f'.endChoice() // (source line: {str(node.sourceline)})')
+        return otherwise_def
 
     def simple_def(self, node):
-        simple_def = ""
-        if node.text is not None:
-            simple_def = 'simple("' + self.deprecatedProcessor(node.text) + '")'
-        else:
-            simple_def = 'simple("")'
-        if "resultType" in node.attrib:
-            simple_def += ".resultType("+ node.attrib["resultType"]+".class)"
-        return simple_def
+        result_type = f', {node.attrib["resultType"]}.class' if 'resultType' in node.attrib else ''
+        expression = self.deprecatedProcessor(node.text) if node.text is not None else ''
+        return f'simple("{expression.strip()}"{result_type})'
 
     def constant_def(self, node):
-        if node.text is not None:
-            return 'constant("' + node.text + '")'
-        else:
-            return 'constant("")'
+        expression = node.text if node.text is not None else ''
+        return f'constant("{expression}")'
 
     def groovy_def(self, node):
-        text = node.text.replace('"','\'')
-        return 'groovy("' + text + '")'
+        code_hash, text = self.preformat_groovy_transformation(node)
+        groovy_transformation = self.groovy_transformations[code_hash]
+        return f'groovy(groovy_{str(groovy_transformation["index"])})'
 
     def xpath_def(self, node):
-        xpath_def = 'xpath("' + node.text + '")'
-        if 'resultType' in node.attrib:
-            xpath_def = 'xpath("' + node.text + '",' + \
-                node.attrib['resultType']+'.class)'
-        if 'saxon' in node.attrib:
-            xpath_def += '.saxon()'
-        return xpath_def
-
+        result_type = f', {node.attrib["resultType"]}.class' if 'resultType' in node.attrib else ''
+        expression = node.text if node.text is not None else ''
+        return f'xpath("{expression}"{result_type})'
 
     def jsonpath_def(self, node):
-        jsonpath_def = 'jsonpath("' + node.text + '")'
-        if 'resultType' in node.attrib:
-            jsonpath_def = 'jsonpath("' + node.text + '",' + \
-                node.attrib['resultType']+'.class)'
-        return jsonpath_def
+        result_type = f', {node.attrib["resultType"]}.class' if 'resultType' in node.attrib else ''
+        expression = node.text if node.text is not None else ''
+        return f'jsonpath("{expression}"{result_type})'
 
     def to_def(self, node):
-        if 'pattern' in node.attrib and 'InOnly' in node.attrib['pattern']:
-            return '\n.inOnly("' + self.componentOptions(node.attrib['uri']) + '")'
-        else:
-            return '\n.to("' + self.componentOptions(node.attrib['uri']) + '")'
+        uri = self.componentOptions(node.attrib['uri'])
+        if 'ref:' in uri:
+            uri = self.endpoints[uri[4:]]
+
+        uri = self.deprecatedProcessor(uri)
+
+        pattern = node.attrib['pattern'] if 'pattern' in node.attrib else ''
+        exchangePattern = f'ExchangePattern.{pattern}, ' if pattern and pattern in ['InOnly', 'InOut'] else ''
+
+        return self.indent(f'.to({exchangePattern}"{uri}")')
+
+    def toD_def(self, node):
+        return self.to_def(node)
 
     def setBody_def(self, node):
-        setBody_predicate = self.analyze_element(node[0])
-        return '\n.setBody(' + setBody_predicate + ')'
+        predicate = self.analyze_element(node[0])
+        groovy_predicate = f'.{predicate}' if predicate.startswith("groovy") else ''
+        predicate = '' if groovy_predicate else predicate
+        return self.indent(f'.setBody({predicate}){groovy_predicate}')
 
     def convertBodyTo_def(self, node):
-        return '\n.convertBodyTo('+ node.attrib['type'] + '.class)'
+        return self.indent('.convertBodyTo(' + node.attrib['type'] + '.class)')
 
     def unmarshal_def(self, node):
         if 'ref' in node.attrib:
-            return '\n.unmarshal("' + node.attrib['ref']+ '") //TODO: define dataformat'
+            return self.indent(f'.unmarshal({node.attrib["ref"]})')
         else:
-            return '\n.unmarshal()' + self.analyze_node(node)
+            return self.indent('.unmarshal()' + self.analyze_node(node))
 
     def marshal_def(self, node):
         if 'ref' in node.attrib:
-            return '\n.marshal("' + node.attrib['ref']+ '") //TODO: define dataformat'
-        else:    
-            return '\n.marshal()' + self.analyze_node(node)
+            return self.indent(f'.marshal({node.attrib["ref"]})')
+        else:
+            return self.indent('.marshal()' + self.analyze_node(node))
 
     def jaxb_def(self, node):
         if 'prettyPrint' in node.attrib:
-            return '.jaxb("' + node.attrib['contextPath']+'")'
+            return '.jaxb("' + node.attrib['contextPath'] + '")'
         else:
-            return '.jaxb("' + node.attrib['contextPath']+'")'
+            return '.jaxb("' + node.attrib['contextPath'] + '")'
 
-    def base64_def(self,node):
-            return '.base64()'
+    def base64_def(self, node):
+        return '.base64()'
 
     def setHeader_def(self, node):
-        setHeader_predicate = self.analyze_element(node[0])
-        return '\n.setHeader("'+node.attrib['headerName']+'",' + setHeader_predicate+')'
+        name_attrib = 'headerName' if 'headerName' in node.attrib else 'name'
+        return self.set_expression(node, 'setHeader', node.attrib[name_attrib])
 
     def setProperty_def(self, node):
-        setProperty_predicate = self.analyze_element(node[0])
-        return '\n.setProperty("' + node.attrib['propertyName']+'",' + setProperty_predicate + ')'
+        name_attrib = 'propertyName' if 'propertyName' in node.attrib else 'name'
+        return self.set_expression(node, 'setProperty', node.attrib[name_attrib])
+
+    def setExchangePattern_def(self, node):
+        return self.set_expression(node, 'setExchangePattern', f'ExchangePattern.{node.attrib["pattern"]}')
 
     def process_def(self, node):
-        return '\n.process("' + node.attrib["ref"]+'")'
+        return self.indent(f'.process({node.attrib["ref"]})')
 
     def inOnly_def(self, node):
-        return '\n.inOnly("' + node.attrib["uri"]+'")'
+        return self.indent(f'.inOnly("{node.attrib["uri"]}")')
 
     def split_def(self, node):
-        split_def = '\n.split().'
-        split_def += self.analyze_element(node[0])
+        expression = self.analyze_element(node[0])
+        node.remove(node[0])  # remove first child as was processed
+
+        split_def = self.indent(f'.split({expression})')
         if 'streaming' in node.attrib:
             split_def += '.streaming()'
         if 'strategyRef' in node.attrib:
-            split_def += '.aggregationStrategyRef("' + node.attrib["strategyRef"] + '")'
+            split_def += f'.aggregationStrategy({node.attrib["strategyRef"]})'
         if 'parallelProcessing' in node.attrib:
             split_def += '.parallelProcessing()'
-        node.remove(node[0]) # remove first child as was processed
+        self.indentation += 1
         split_def += self.analyze_node(node)
-        split_def += '\n.end() //end split'
+        self.indentation -= 1
+        split_def += self.indent('.end() // end split')
         return split_def
 
     def removeHeaders_def(self, node):
-        if 'excludePattern' in node.attrib:
-            return '\n.removeHeaders("' + node.attrib['pattern']+'", "' + node.attrib['excludePattern']+'")'
-        else:
-            return '\n.removeHeaders("' + node.attrib['pattern']+'")'
+        exclude_pattern = ', "' + node.attrib['excludePattern'] + '"' if 'excludePattern' in node.attrib else ''
+        return self.indent(f'.removeHeaders("{node.attrib["pattern"]}"{exclude_pattern})')
 
     def removeHeader_def(self, node):
-        return '\n.removeHeaders("' + node.attrib['headerName']+'")'
-        
+        return self.indent(f'.removeHeaders("{node.attrib["headerName"]}")')
 
     def xquery_def(self, node):
-        return 'xquery("'+ node.text +'") //xquery not finished please review'
+        return f'xquery("{node.text}") // xquery not finished please review'
 
     def doTry_def(self, node):
-        doTry_def = "\n.doTry()"
+        doTry_def = self.indent('.doTry()')
+        self.indentation += 1
         doTry_def += self.analyze_node(node)
+        self.indentation -= 1
+        doTry_def += self.indent(f'.endDoTry() // (source line: {str(node.sourceline)})')
         return doTry_def
 
     def doCatch_def(self, node):
@@ -293,11 +439,24 @@ class Converter:
             exceptions.append(exception.text + ".class")
             node.remove(exception)
         exceptions = ','.join(exceptions)
-        doCatch_def = '\n.endDoTry()'
-        doCatch_def += '\n.doCatch(' + exceptions + ')'
+
+        doCatch_def = self.indent(f'.doCatch({exceptions})')
+
+        self.indentation += 1
         doCatch_def += self.analyze_node(node)
-        doCatch_def += "\n.end() //end doCatch"
+        self.indentation -= 1
         return doCatch_def
+
+    def onWhen_def(self, node):
+        onWhen_predicate = self.analyze_element(node[0])
+        node.remove(node[0])
+        return f'.onWhen({onWhen_predicate})'
+
+    def doFinally_def(self, node):
+        self.indentation += 1
+        doFinally_Def = self.analyze_node(node)
+        self.indentation -= 1
+        return doFinally_Def
 
     def handled_def(self, node):
         return '.handled(' + node[0].text + ')'
@@ -307,12 +466,12 @@ class Converter:
 
     def wireTap_def(self, node):
         if 'executorServiceRef' in node.attrib:
-            return '\n.wireTap("'+ node.attrib['uri'] +'").executorServiceRef("profile")'
-        else:    
-            return '\n.wireTap("'+ node.attrib['uri'] +'")'
+            return '\n.wireTap("' + node.attrib['uri'] + '").executorServiceRef("profile")'
+        else:
+            return '\n.wireTap("' + node.attrib['uri'] + '")'
 
     def language_def(self, node):
-        return 'language("'+ node.attrib['language']+'","'+ node.text +'")'
+        return 'language("' + node.attrib['language'] + '","' + node.text + '")'
 
     def threads_def(self, node):
         threads_def = None
@@ -323,9 +482,9 @@ class Converter:
         if poolSize is not None and maxPoolSize is None:
             maxPoolSize = poolSize
         if 'threadName' in node.attrib:
-            threads_def = '\n.threads('+ poolSize+','+ maxPoolSize+',"'+ node.attrib['threadName']+'")'
+            threads_def = '\n.threads(' + poolSize + ',' + maxPoolSize + ',"' + node.attrib['threadName'] + '")'
         else:
-            threads_def = '\n.threads('+ poolSize+','+ maxPoolSize+')'
+            threads_def = '\n.threads(' + poolSize + ',' + maxPoolSize + ')'
 
         threads_def += self.analyze_node(node)
         threads_def += "\n.end() //end threads"
@@ -337,33 +496,36 @@ class Converter:
         return delay_def
 
     def javaScript_def(self, node):
-        return 'new JavaScriptExpression("'+ node.text +'")'
+        return 'new JavaScriptExpression("' + node.text + '")'
 
     def threadPoolProfile_def(self, node):
         profileDef = '\nThreadPoolProfile profile = new ThreadPoolProfile();'
         if 'defaultProfile' in node.attrib:
-            profileDef += '\nprofile.setDefaultProfile('+ node.attrib['defaultProfile']+');'
+            profileDef += '\nprofile.setDefaultProfile(' + node.attrib['defaultProfile'] + ');'
         if 'id' in node.attrib:
-            profileDef += '\nprofile.setId("'+ node.attrib['id']+'");'
+            profileDef += '\nprofile.setId("' + node.attrib['id'] + '");'
         if 'keepAliveTime' in node.attrib:
-            profileDef += '\nprofile.setKeepAliveTime('+ node.attrib['keepAliveTime']+'L);'
+            profileDef += '\nprofile.setKeepAliveTime(' + node.attrib['keepAliveTime'] + 'L);'
         if 'maxPoolSize' in node.attrib:
-            profileDef += '\nprofile.setMaxPoolSize('+ node.attrib['maxPoolSize'] +');'
+            profileDef += '\nprofile.setMaxPoolSize(' + node.attrib['maxPoolSize'] + ');'
         if 'maxQueueSize' in node.attrib:
-            profileDef += '\nprofile.setMaxQueueSize('+ node.attrib['maxQueueSize']+');'
+            profileDef += '\nprofile.setMaxQueueSize(' + node.attrib['maxQueueSize'] + ');'
         if 'poolSize' in node.attrib:
-            profileDef += '\nprofile.setPoolSize('+ node.attrib['poolSize']+');'
+            profileDef += '\nprofile.setPoolSize(' + node.attrib['poolSize'] + ');'
         if 'rejectedPolicy' in node.attrib:
             if node.attrib['rejectedPolicy'] == 'Abort':
                 profileDef += '\nprofile.setRejectedPolicy(ThreadPoolRejectedPolicy.Abort);'
         return profileDef
 
     def throwException_def(self, node):
-        throwException_def = ''
-        if 'ref' in node.attrib:
-            throwException_def = '\n.throwException(Exception.class, "' + node.attrib['ref']+ '")  //TODO: Please review throwException has changed with java DSL'
-        else:
-            throwException_def = '\n.throwException(Exception.class, "") //TODO: Please review throwException has changed with java DSL'
+        has_ref = 'ref' in node.attrib
+        exception_type = '' if has_ref else node.attrib['exceptionType']
+        message = f'TODO: Please review, throwException has changed with Java DSL (source line: ' \
+                  + str(node.sourceline) \
+                  + ')"' \
+            if has_ref else node.attrib['message']
+
+        throwException_def = self.indent(f'.throwException({exception_type}.class, "{message}")')
         throwException_def += self.analyze_node(node)
         return throwException_def
 
@@ -371,32 +533,148 @@ class Converter:
         return 'SpelExpression.spel("' + node.text + '")'
 
     def loop_def(self, node):
-        loop_def = '\n.loop().'
+        loop_def = self.indent('.loop(' + self.analyze_element(node[0]) + ')')
+        node.remove(node[0])
+        self.indentation += 1
         loop_def += self.analyze_node(node)
-        loop_def += '\n.end() // end loop'
+        self.indentation -= 1
+        loop_def += self.indent(f'.end() // end loop (source line: {str(node.sourceline)})')
         return loop_def
 
     def aggregate_def(self, node):
-        aggregate_def = '\n.aggregate()'
+        aggregate_def = self.indent('.aggregate()')
         aggregate_def += self.analyze_element(node[0])
-        aggregate_def += '.completionTimeout('+ node.attrib['completionTimeout']+')'
-        aggregate_def += '.aggregationStrategyRef("'+ node.attrib['strategyRef']+'")'
-        node.remove(node[0]) # remove first child as was processed
+        if 'completionTimeout' in node.attrib:
+            aggregate_def += f'.completionTimeout({node.attrib["completionTimeout"]})'
+
+        if 'strategyRef' in node.attrib:
+            aggregate_def += f'.aggregationStrategy({node.attrib["strategyRef"]})'
+
+        node.remove(node[0])  # remove first child as was processed
+        self.indentation += 1
         aggregate_def += self.analyze_node(node)
-        aggregate_def += '\n.end() // end aggregate'
+        self.indentation -= 1
+        aggregate_def += self.indent('.end() // end aggregate')
         return aggregate_def
 
     def correlationExpression_def(self, node):
         return '.' + self.analyze_node(node)
 
     def tokenize_def(self, node):
-        return 'tokenize("'+ node.attrib['token'] +'")'
+        return f'tokenize("{node.attrib["token"]}")'
+
+    def stop_def(self, node):
+        return self.indent('.stop()')
+
+    def restConfiguration_def(self, node):
+
+        rest_configuration = self.indent('restConfiguration()')
+
+        self.indentation += 1
+
+        if 'contextPath' in node.attrib:
+            rest_configuration += self.indent(f'.contextPath("{node.attrib["contextPath"]}")')
+
+        if 'bindingMode' in node.attrib:
+            rest_configuration += self.indent(f'.bindingMode(RestBindingMode.{node.attrib["bindingMode"]})')
+
+        if 'port' in node.attrib:
+            rest_configuration += self.indent(f'.port({node.attrib["port"]})')
+
+        rest_configuration += self.analyze_node(node)
+        self.indentation -= 1
+
+        rest_configuration += ';\n'
+
+        return rest_configuration
+
+    def componentProperty_def(self, node):
+        return self.indent(f'.componentProperty("{node.attrib["key"]}", "{node.attrib["value"]}")')
+
+    def dataFormatProperty_def(self, node):
+        return self.indent(f'.dataFormatProperty("{node.attrib["key"]}", "{node.attrib["value"]}")')
+
+    def rest_def(self, node):
+        path = node.attrib['path'] if 'path' in node.attrib else ''
+        rest = self.indent(f'rest("{path}")' if path else 'rest()')
+        self.indentation += 1
+        rest += self.analyze_node(node)
+        self.indentation -= 1
+
+        rest += ';\n'
+        return rest
+
+    def get_def(self, node):
+        return self.generic_rest_def(node, 'get')
+
+    def post_def(self, node):
+        return self.generic_rest_def(node, 'post')
+
+    def param_def(self, node):
+        param = '.param()'
+        param += '.endParam()'
+
+        if 'name' in node.attrib:
+            param += f'.name("{node.attrib["name"]}")'
+
+        if 'required' in node.attrib:
+            param += f'.required({node.attrib["required"]})'
+
+        if 'dataFormat' in node.attrib:
+            param += f'.dataFormat(RestParamType.{node.attrib["dataFormat"]})'
+
+        if 'type' in node.attrib:
+            param += f'.type(RestParamType.{node.attrib["type"]})'
+
+        if 'description' in node.attrib:
+            param += f'.description("{node.attrib["description"]}")'
+
+        if 'dataType' in node.attrib:
+            param += f'.dataType("{node.attrib["dataType"]}")'
+
+        return self.indent(param)
+        # param().name("id").type(path).description("The id of the user to get").dataType("int").endParam()
+
+    def generic_rest_def(self, node, verb):
+        uri = node.attrib['uri'] if 'uri' in node.attrib else ''
+        rest_call = self.indent(f'.{verb}("{uri}")' if uri else f'{verb}()')
+        self.indentation += 1
+
+        if 'bindingMode' in node.attrib:
+            rest_call += self.indent(f'.bindingMode(RestBindingMode.{node.attrib["bindingMode"]})')
+
+        if 'consumes' in node.attrib:
+            rest_call += self.indent(f'.consumes("{node.attrib["consumes"]}")')
+
+        if 'produces' in node.attrib:
+            rest_call += self.indent(f'.produces("{node.attrib["produces"]}")')
+
+        if 'type' in node.attrib:
+            rest_call += self.indent(f'.type({node.attrib["type"]}.class)')
+
+        if 'outType' in node.attrib:
+            rest_call += self.indent(f'.outType({node.attrib["outType"]}.class)')
+
+        rest_call += self.analyze_node(node)
+
+        self.indentation -= 1
+
+        return rest_call
 
     # Text deprecated processor for camel deprecated endpoints and features
     def deprecatedProcessor(self, text):
-        text = re.sub('\${property\.(\w+\.?\w+)}', r'${exchangeProperty.\1}', text) #exhange property in simple expressions
-        text = re.sub('"', "'", text) # replace all ocurrences from " to '
-        text = re.sub('\n', "", text) # remove all endlines
+        # exchange property in simple expressions
+        text = re.sub('\${property\.(\w+\.?\w+)}', r'${exchangeProperty.\1}', text)
+        text = re.sub('\${header\.(\w+\.?\w+)}', r'${headers.\1}', text)
+        text = re.sub('"', "'", text)  # replace all occurrences from " to '
+        text = re.sub('\n', "", text)  # remove all endlines
+
+        # convert all property references
+        for match in re.finditer(r"\$(\{[\w\.\_]+\})", text):
+            if 'exchangeProperty' not in match.group(0) and 'headers' not in match.group(0):
+                text = text.replace(match.group(0), '{' + match.group(1) + '}')
+                text = text.replace(match.group(0), f'{{{match.group(1)}}}')
+
         return text
 
     # Text processor for apply custom options in to endpoints
@@ -404,6 +682,29 @@ class Converter:
         if "velocity:" in text:
             text += "?contentCache=true"
         return text
+
+    def set_expression(self, node, set_method, parameter=None):
+        predicate = self.analyze_element(node[0])
+        groovy_predicate = f'.{predicate}' if predicate.startswith("groovy") else ''
+        predicate = '' if groovy_predicate else predicate
+        parameter = f'"{parameter.strip()}", ' if parameter else ''
+        return self.indent(f'.{set_method}({parameter}{predicate.strip()}){groovy_predicate}')
+
+    def process_multiline_groovy(self, text):
+        parts = re.split('\r?\n', text)
+        parts = [self.format_multiline_groovy(idx, part) for idx, part in enumerate(parts)]
+        return parts
+
+    def format_multiline_groovy(self, idx, part):
+        indentation = '' if idx == 0 else ' ' * 16
+        return f'{indentation}"{part}"'
+
+    def preformat_groovy_transformation(self, node):
+        text = node.text.replace('"', '\'')
+        return hash(text), text
+
+    def indent(self, text: str) -> str:
+        return '\n' + (' ' * 4 * self.indentation) + text if text else ''
 
 
 if __name__ == "__main__":
