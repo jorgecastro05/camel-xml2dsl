@@ -180,9 +180,11 @@ public class >>> class name <<< extends RouteBuilder {
         return ""
 
     def multicast_def(self, node):
-        multicast_def = "\n.multicast()"
+        multicast_def = self.indent('.multicast()')
+        self.indentation += 1
         multicast_def += self.analyze_node(node)
-        multicast_def += "\n.end() //end multicast"
+        self.indentation -= 1
+        multicast_def += self.indent('.end() // end multicast')
         return multicast_def
 
     def bean_def(self, node):
@@ -191,9 +193,9 @@ public class >>> class name <<< extends RouteBuilder {
         return self.indent(f'.bean({self.bean_refs[ref]}.class, "{method}")')
 
     def recipientList_def(self, node):
-        recipient_def = "\n.recipientList()."
+        recipient_def = self.indent('.recipientList().')
         recipient_def += self.analyze_node(node)
-        recipient_def += ".end() // end recipientList"
+        recipient_def += self.indent('.end() // end recipientList')
         return recipient_def
 
     def errorHandler_def(self, node):
@@ -279,14 +281,14 @@ public class >>> class name <<< extends RouteBuilder {
         return from_def
 
     def log_def(self, node):
+        message = self.deprecatedProcessor(node.attrib['message'])
         if 'loggingLevel' in node.attrib and node.attrib['loggingLevel'] != 'INFO':
-            return self.indent('.log(LoggingLevel.' + node.attrib['loggingLevel'] + ', "' +
-                               self.deprecatedProcessor(node.attrib['message']) + '")')
+            return self.indent(f'.log(LoggingLevel.{node.attrib["loggingLevel"]}, "{message}"){self.handle_id(node)}')
         else:
-            return self.indent('.log("' + self.deprecatedProcessor(node.attrib['message']) + '")')
+            return self.indent(f'.log("{message}"){self.handle_id(node)}')
 
     def choice_def(self, node):
-        choice_def = self.indent(f'.choice() // (source line: {str(node.sourceline)})')
+        choice_def = self.indent(f'.choice(){self.handle_id(node)} // (source line: {str(node.sourceline)})')
         self.indentation += 1
         choice_def += self.analyze_node(node)
         self.indentation -= 1
@@ -296,7 +298,7 @@ public class >>> class name <<< extends RouteBuilder {
         return choice_def
 
     def when_def(self, node):
-        when_def = self.indent('.when(' + self.analyze_element(node[0]) + ')')
+        when_def = self.indent('.when(' + self.analyze_element(node[0]) + ')' + self.handle_id(node))
         node.remove(node[0])
         self.indentation += 1
         when_def += self.analyze_node(node)
@@ -305,7 +307,7 @@ public class >>> class name <<< extends RouteBuilder {
         return when_def
 
     def otherwise_def(self, node):
-        otherwise_def = self.indent('.otherwise()')
+        otherwise_def = self.indent(f'.otherwise(){self.handle_id(node)}')
         self.indentation += 1
         otherwise_def += self.analyze_node(node)
         self.indentation -= 1
@@ -315,28 +317,28 @@ public class >>> class name <<< extends RouteBuilder {
     def simple_def(self, node):
         result_type = f', {node.attrib["resultType"]}.class' if 'resultType' in node.attrib else ''
         expression = self.deprecatedProcessor(node.text) if node.text is not None else ''
-        return f'simple("{expression.strip()}"{result_type})'
+        return f'simple("{expression.strip()}"{result_type}){self.handle_id(node)}'
 
     def constant_def(self, node):
         expression = node.text if node.text is not None else ''
-        return f'constant("{expression}")'
+        return f'constant("{expression}"){self.handle_id(node)}'
 
     def groovy_def(self, node):
         code_hash, text = self.preformat_groovy_transformation(node)
         groovy_transformation = self.groovy_transformations[code_hash]
-        return f'groovy(groovy_{str(groovy_transformation["index"])})'
+        return f'groovy(groovy_{str(groovy_transformation["index"])}){self.handle_id(node)}'
 
     def xpath_def(self, node):
         result_type = f', {node.attrib["resultType"]}.class' if 'resultType' in node.attrib else ''
         expression = node.text if node.text is not None else ''
-        return f'xpath("{expression}"{result_type})'
+        return f'xpath("{expression}"{result_type}){self.handle_id(node)}'
 
     def jsonpath_def(self, node):
         result_type = f', {node.attrib["resultType"]}.class' if 'resultType' in node.attrib else ''
         expression = node.text if node.text is not None else ''
-        return f'jsonpath("{expression}"{result_type})'
+        return f'jsonpath("{expression}"{result_type}){self.handle_id(node)}'
 
-    def to_def(self, node):
+    def to_definition(self, node, to_type):
         uri = self.componentOptions(node.attrib['uri'])
         if 'ref:' in uri:
             uri = self.endpoints[uri[4:]]
@@ -346,19 +348,24 @@ public class >>> class name <<< extends RouteBuilder {
         pattern = node.attrib['pattern'] if 'pattern' in node.attrib else ''
         exchangePattern = f'ExchangePattern.{pattern}, ' if pattern and pattern in ['InOnly', 'InOut'] else ''
 
-        return self.indent(f'.to({exchangePattern}"{uri}")')
+        node_id = self.handle_id(node)
+
+        return self.indent(f'.{to_type}({exchangePattern}"{uri}"){node_id}')
+
+    def to_def(self, node):
+        return self.to_definition(node, 'to')
 
     def toD_def(self, node):
-        return self.to_def(node)
+        return self.to_definition(node, "toD")
 
     def setBody_def(self, node):
         predicate = self.analyze_element(node[0])
-        groovy_predicate = f'.{predicate}' if predicate.startswith("groovy") else ''
+        groovy_predicate = f'.{predicate}' if predicate.startswith('groovy') else ''
         predicate = '' if groovy_predicate else predicate
         return self.indent(f'.setBody({predicate}){groovy_predicate}')
 
     def convertBodyTo_def(self, node):
-        return self.indent('.convertBodyTo(' + node.attrib['type'] + '.class)')
+        return self.indent(f'.convertBodyTo({node.attrib["type"]}.class){self.handle_id(node)}')
 
     def unmarshal_def(self, node):
         if 'ref' in node.attrib:
@@ -368,9 +375,9 @@ public class >>> class name <<< extends RouteBuilder {
 
     def marshal_def(self, node):
         if 'ref' in node.attrib:
-            return self.indent(f'.marshal({node.attrib["ref"]})')
+            return self.indent(f'.marshal({node.attrib["ref"]}){self.handle_id(node)}')
         else:
-            return self.indent('.marshal()' + self.analyze_node(node))
+            return self.indent(f'.marshal(){self.handle_id(node)}' + self.analyze_node(node))
 
     def jaxb_def(self, node):
         if 'prettyPrint' in node.attrib:
@@ -393,7 +400,7 @@ public class >>> class name <<< extends RouteBuilder {
         return self.set_expression(node, 'setExchangePattern', f'ExchangePattern.{node.attrib["pattern"]}')
 
     def process_def(self, node):
-        return self.indent(f'.process({node.attrib["ref"]})')
+        return self.indent(f'.process({node.attrib["ref"]}){self.handle_id(node)}')
 
     def inOnly_def(self, node):
         return self.indent(f'.inOnly("{node.attrib["uri"]}")')
@@ -426,7 +433,7 @@ public class >>> class name <<< extends RouteBuilder {
         return f'xquery("{node.text}") // xquery not finished please review'
 
     def doTry_def(self, node):
-        doTry_def = self.indent('.doTry()')
+        doTry_def = self.indent(f'.doTry(){self.handle_id(node)}')
         self.indentation += 1
         doTry_def += self.analyze_node(node)
         self.indentation -= 1
@@ -440,7 +447,7 @@ public class >>> class name <<< extends RouteBuilder {
             node.remove(exception)
         exceptions = ','.join(exceptions)
 
-        doCatch_def = self.indent(f'.doCatch({exceptions})')
+        doCatch_def = self.indent(f'.doCatch({exceptions}){self.handle_id(node)}')
 
         self.indentation += 1
         doCatch_def += self.analyze_node(node)
@@ -462,13 +469,14 @@ public class >>> class name <<< extends RouteBuilder {
         return '.handled(' + node[0].text + ')'
 
     def transacted_def(self, node):
-        return ""
+        transacted_ref = ''
+        return self.indent(f'.transacted({transacted_ref}){self.handle_id(node)}')
 
     def wireTap_def(self, node):
         if 'executorServiceRef' in node.attrib:
-            return '\n.wireTap("' + node.attrib['uri'] + '").executorServiceRef("profile")'
+            return self.indent(f'.wireTap("{node.attrib["uri"]}"){self.handle_id(node)}.executorServiceRef("profile")')
         else:
-            return '\n.wireTap("' + node.attrib['uri'] + '")'
+            return self.indent(f'.wireTap("{node.attrib["uri"]}"){self.handle_id(node)}')
 
     def language_def(self, node):
         return 'language("' + node.attrib['language'] + '","' + node.text + '")'
@@ -525,7 +533,7 @@ public class >>> class name <<< extends RouteBuilder {
                   + ')"' \
             if has_ref else node.attrib['message']
 
-        throwException_def = self.indent(f'.throwException({exception_type}.class, "{message}")')
+        throwException_def = self.indent(f'.throwException({exception_type}.class, "{message}"){self.handle_id(node)}')
         throwException_def += self.analyze_node(node)
         return throwException_def
 
@@ -533,7 +541,7 @@ public class >>> class name <<< extends RouteBuilder {
         return 'SpelExpression.spel("' + node.text + '")'
 
     def loop_def(self, node):
-        loop_def = self.indent('.loop(' + self.analyze_element(node[0]) + ')')
+        loop_def = self.indent(f'.loop({self.analyze_element(node[0])}){self.handle_id(node)}')
         node.remove(node[0])
         self.indentation += 1
         loop_def += self.analyze_node(node)
@@ -577,6 +585,9 @@ public class >>> class name <<< extends RouteBuilder {
 
         if 'bindingMode' in node.attrib:
             rest_configuration += self.indent(f'.bindingMode(RestBindingMode.{node.attrib["bindingMode"]})')
+
+        if 'component' in node.attrib:
+            rest_configuration += self.indent(f'.component({node.attrib["component"]})')
 
         if 'port' in node.attrib:
             rest_configuration += self.indent(f'.port({node.attrib["port"]})')
@@ -662,7 +673,8 @@ public class >>> class name <<< extends RouteBuilder {
         return rest_call
 
     # Text deprecated processor for camel deprecated endpoints and features
-    def deprecatedProcessor(self, text):
+    @staticmethod
+    def deprecatedProcessor(text):
         # exchange property in simple expressions
         text = re.sub('\${property\.(\w+\.?\w+)}', r'${exchangeProperty.\1}', text)
         text = re.sub('\${header\.(\w+\.?\w+)}', r'${headers.\1}', text)
@@ -678,7 +690,8 @@ public class >>> class name <<< extends RouteBuilder {
         return text
 
     # Text processor for apply custom options in to endpoints
-    def componentOptions(self, text):
+    @staticmethod
+    def componentOptions(text):
         if "velocity:" in text:
             text += "?contentCache=true"
         return text
@@ -695,13 +708,19 @@ public class >>> class name <<< extends RouteBuilder {
         parts = [self.format_multiline_groovy(idx, part) for idx, part in enumerate(parts)]
         return parts
 
-    def format_multiline_groovy(self, idx, part):
+    @staticmethod
+    def format_multiline_groovy(idx, part):
         indentation = '' if idx == 0 else ' ' * 16
         return f'{indentation}"{part}"'
 
-    def preformat_groovy_transformation(self, node):
+    @staticmethod
+    def preformat_groovy_transformation(node):
         text = node.text.replace('"', '\'')
         return hash(text), text
+
+    @staticmethod
+    def handle_id(node):
+        return f'.id("{node.attrib["id"]}")' if 'id' in node.attrib else ''
 
     def indent(self, text: str) -> str:
         return '\n' + (' ' * 4 * self.indentation) + text if text else ''
@@ -715,3 +734,9 @@ if __name__ == "__main__":
 def main():
     converter = Converter()
     converter.xml_to_dsl()
+
+
+
+#// {{body}} -> body()
+#// {{exception.*}} -> ${exception.*}
+#// to() containing "${}" expression -> toD()
