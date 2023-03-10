@@ -445,7 +445,7 @@ public class >>> class name <<< extends RouteBuilder {
         for exception in node.findall("camel:exception", ns):
             exceptions.append(exception.text + ".class")
             node.remove(exception)
-        exceptions = ','.join(exceptions)
+        exceptions = ', '.join(exceptions)
 
         doCatch_def = self.indent(f'.doCatch({exceptions}){self.handle_id(node)}')
 
