@@ -96,7 +96,6 @@
                             <setProperty id="_setProperty2" propertyName="bodySql">
                                 <simple>${body[0]}</simple>
                             </setProperty>
-                            <setExchangePattern pattern=""
                             <setBody id="_setBody1">
                                 <simple>${header.unmarshall}</simple>
                             </setBody>
@@ -187,10 +186,10 @@
             <from uri="direct:do-try-test"/>
             <doTry>
                 <doTry>
-                    <throwException id="throwException1"/>
+                    <throwException id="throwException1" message="Forced" exceptionType="java.lang.IllegalArgumentException"/>
                     <doCatch id="doCatch1">
                         <log id="log1" message="doCatch 1"/>
-                        <throwException id="throwException2"/>
+                        <throwException id="throwException2" message="Forced" exceptionType="java.lang.IllegalArgumentException"/>
                     </doCatch>
                 </doTry>
                 <doCatch id="doCatch2">

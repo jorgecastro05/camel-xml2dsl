@@ -10,3 +10,4 @@ src/camel_xml2dsl.egg-info/requires.txt
 src/camel_xml2dsl.egg-info/top_level.txt
 src/xml2dsl/__init__.py
 src/xml2dsl/xml2dsl.py
+tests/test_xml2dsl.py
