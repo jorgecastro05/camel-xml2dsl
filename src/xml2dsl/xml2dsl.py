@@ -623,7 +623,6 @@ public class >>> class name <<< extends RouteBuilder {
 
     def param_def(self, node):
         param = '.param()'
-        param += '.endParam()'
 
         if 'name' in node.attrib:
             param += f'.name("{node.attrib["name"]}")'
@@ -642,6 +641,8 @@ public class >>> class name <<< extends RouteBuilder {
 
         if 'dataType' in node.attrib:
             param += f'.dataType("{node.attrib["dataType"]}")'
+
+        param += '.endParam()'
 
         return self.indent(param)
         # param().name("id").type(path).description("The id of the user to get").dataType("int").endParam()
