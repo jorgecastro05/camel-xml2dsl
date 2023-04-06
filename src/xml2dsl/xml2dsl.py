@@ -9,7 +9,9 @@ import sys
 __version__ = importlib.metadata.version('camel-xml2dsl')
 ns = {
     "camel": "http://camel.apache.org/schema/spring",
-    "beans": "http://www.springframework.org/schema/beans"
+    "camelBlueprint": "http://camel.apache.org/schema/blueprint",
+    "beans": "http://www.springframework.org/schema/beans",
+    "blueprint": "http://www.osgi.org/xmlns/blueprint/v1.0.0"
 }
 
 console = Console()
@@ -32,6 +34,7 @@ package xml2dsl;
 
 import org.apache.camel.ExchangePattern;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.model.dataformat.JaxbDataFormat;
 import org.apache.camel.model.dataformat.JsonDataFormat;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import org.apache.camel.model.rest.RestBindingMode;
@@ -88,7 +91,7 @@ public class >>> class name <<< extends RouteBuilder {
                 bean_definitions.append(bean)
 
             # Multiline groovy transforms
-            for idx, node in enumerate(root.findall('.//camel:groovy', ns)):
+            for idx, node in enumerate(self.find_any_descendent(root, 'groovy')):
                 code_hash, text = self.preformat_groovy_transformation(node)
                 transformed = Converter.GROOVY_TEMPLATE \
                     .replace('>>> index <<<', str(idx)) \
@@ -100,7 +103,7 @@ public class >>> class name <<< extends RouteBuilder {
                 }
 
             # Camel Contexts
-            for idx, camelContext in enumerate(root.findall('camel:camelContext', ns)):
+            for idx, camelContext in enumerate(self.find_camel_nodes(root, 'camelContext')):
                 if 'id' in camelContext.attrib:
                     console.log("processing camel context", camelContext.attrib['id'])
 
@@ -124,8 +127,8 @@ public class >>> class name <<< extends RouteBuilder {
     def get_namespaces(node):
         console.log("namespaces:", node.nsmap)
 
-    def analyze_node(self, node):
-        dslText = ""
+    def analyze_node(self, node, suffix=''):
+        dslText = ''
         for child in node:
             node_name = child.tag.partition('}')[2]
 
@@ -133,13 +136,26 @@ public class >>> class name <<< extends RouteBuilder {
             if node_name == 'propertyPlaceholder':
                 continue
 
-            process_function_name = node_name + "_def"
+            if suffix == 'dataformat':
+                process_function_name = f'{node_name}_dataformat_def' if suffix == 'dataformat' else f'{node_name}_def'
+                suffix = ''
+            else:
+                process_function_name = f'{node_name}_def'
+
             console.log("processing node", node_name, child.tag, child.sourceline)
             next_node = getattr(self, process_function_name, None)
             if next_node is None:
                 console.log("unknown node", process_function_name, child.sourceline)
                 sys.exit(1)
-            dslText += getattr(self, process_function_name)(child)
+
+            if suffix:
+                dslText += getattr(self, process_function_name)(child, suffix)
+            else:
+                dslText += getattr(self, process_function_name)(child)
+
+            if node_name == 'from':
+                suffix = ''
+
         return dslText
 
     def analyze_element(self, node):
@@ -148,16 +164,26 @@ public class >>> class name <<< extends RouteBuilder {
         return getattr(self, node_name)(node)
 
     def route_def(self, node):
-        route_def = self.analyze_node(node)
+        description_node = self.find_camel_node(node, 'description')
+        description = ''
+        if description_node is not None:
+            self.indentation += 1
+            description = self.description_def(description_node)
+            self.indentation -= 1
+            node.remove(description_node)
+
+        route_def = self.analyze_node(node, description)
         route_def += self.indent('.end();\n')
         self.indentation -= 1
         return route_def
 
     def dataFormats_def(self, node):
-        dataformats = self.analyze_node(node)
+        dataformats = ''
+        for child in node:
+            dataformats += self.analyze_node(child, 'dataformat')
         return dataformats
 
-    def json_def(self, node):
+    def json_dataformat_def(self, node):
         name = node.attrib['id']
         library = f'JsonLibrary.{node.attrib["library"]}' if 'library' in node.attrib else ''
 
@@ -172,6 +198,20 @@ public class >>> class name <<< extends RouteBuilder {
             json_dataformat += self.indent(f'{name}.unmarshalType({node.attrib["unmarshalTypeName"]}.class);')
 
         return json_dataformat + '\n'
+
+    def jaxb_dataformat_def(self, node):
+        name = node.attrib['id']
+        jaxb_dataformat = ''
+
+        jaxb_dataformat += self.indent(f'JaxbDataFormat {name} = new JaxbDataFormat();')
+
+        if 'contextPath' in node.attrib:
+            jaxb_dataformat += self.indent(f'{name}.setContextPath("{node.attrib["contextPath"]}");')
+
+        if 'encoding' in node.attrib:
+            jaxb_dataformat += self.indent(f'{name}.encoding("{node.attrib["encoding"]}");')
+
+        return jaxb_dataformat + '\n'
 
     def endpoint_def(self, node):
         endpoint_id = node.attrib['id']
@@ -221,7 +261,7 @@ public class >>> class name <<< extends RouteBuilder {
 
     def onException_def(self, node):
         exceptions = []
-        for exception in node.findall("camel:exception", ns):
+        for exception in self.find_camel_nodes(node, 'exception'):
             exceptions.append(exception.text + ".class")
             node.remove(exception)
         exceptions = ','.join(exceptions)
@@ -229,17 +269,18 @@ public class >>> class name <<< extends RouteBuilder {
 
         indented = False
 
-        handled = node.find("camel:handled", ns)
+        handled = self.find_camel_nodes(node, 'handled')
         if handled is not None:
             if not indented:
                 self.indentation += 1
                 indented = True
 
-            onException_def += self.indent('.handled(' + handled[0].text + ')')
+            handled_expression = self.analyze_node(handled[0])
+            onException_def += self.indent(f'.handled({handled_expression})')
 
-            node.remove(handled)
+            node.remove(handled[0])
 
-        redeliveryPolicy = node.find('camel:redeliveryPolicy', ns)
+        redeliveryPolicy = self.find_camel_node(node, 'redeliveryPolicy')
         if redeliveryPolicy is not None:
             if not indented:
                 self.indentation += 1
@@ -271,12 +312,14 @@ public class >>> class name <<< extends RouteBuilder {
     def description_def(self, node):
         return self.indent(f'.description("{node.text}")')
 
-    def from_def(self, node):
+    def from_def(self, node, description=''):
         routeFrom = self.deprecatedProcessor(node.attrib['uri'])
         routeId = node.getparent().attrib['id'] if 'id' in node.getparent().keys() else routeFrom
         from_def = self.indent(f'from("{routeFrom}")')
         self.indentation += 1
         from_def += self.indent(f'.routeId("{routeId}")')
+        if description:
+            from_def += description
         from_def += self.analyze_node(node)
         return from_def
 
@@ -442,7 +485,7 @@ public class >>> class name <<< extends RouteBuilder {
 
     def doCatch_def(self, node):
         exceptions = []
-        for exception in node.findall("camel:exception", ns):
+        for exception in self.find_camel_nodes(node, 'exception'):
             exceptions.append(exception.text + ".class")
             node.remove(exception)
         exceptions = ', '.join(exceptions)
@@ -673,6 +716,39 @@ public class >>> class name <<< extends RouteBuilder {
 
         return rest_call
 
+    def filter_def(self, node):
+        filter_def = self.indent(f'.filter(){self.handle_id(node)} // (source line: {str(node.sourceline)})')
+        self.indentation += 1
+        filter_def += self.analyze_node(node)
+        self.indentation -= 1
+
+        filter_def += self.indent(f'.end() // end filter (source line: {str(node.sourceline)})')
+
+        return filter_def
+
+    def routeContextRef_def(self, node):
+        return self.indent(f'// TODO: import routeContextRef routes for \"{node.attrib["ref"]}\"')
+
+    @staticmethod
+    def find_camel_node(node, node_name):
+        found = node.find(f'camel:{node_name}', ns)
+        if found:
+            return found[0]
+
+        found = node.findall(f'camelBlueprint:{node_name}', ns)
+        if found:
+            return found[0]
+
+        return None
+
+    @staticmethod
+    def find_camel_nodes(node, node_name):
+        return node.findall(f'camel:{node_name}', ns) + node.findall(f'camelBlueprint:{node_name}', ns)
+
+    @staticmethod
+    def find_any_descendent(node, node_name):
+        return node.findall(f'.//camel:{node_name}', ns) + node.findall(f'.//camelBlueprint:{node_name}', ns)
+
     # Text deprecated processor for camel deprecated endpoints and features
     @staticmethod
     def deprecatedProcessor(text):
@@ -681,6 +757,9 @@ public class >>> class name <<< extends RouteBuilder {
         text = re.sub('\${header\.(\w+\.?\w+)}', r'${headers.\1}', text)
         text = re.sub('"', "'", text)  # replace all occurrences from " to '
         text = re.sub('\n', "", text)  # remove all endlines
+
+        if text == '${body}':
+            return text
 
         # convert all property references
         for match in re.finditer(r"\$(\{[\w\.\_]+\})", text):
@@ -698,11 +777,18 @@ public class >>> class name <<< extends RouteBuilder {
         return text
 
     def set_expression(self, node, set_method, parameter=None):
+        description_node = self.find_camel_node(node, 'description')
+        description = ''
+        if description_node is not None:
+            description = self.description_def(description_node)
+            description = description[description.index('.'):]
+            node.remove(description_node)
+
         predicate = self.analyze_element(node[0])
         groovy_predicate = f'.{predicate}' if predicate.startswith("groovy") else ''
         predicate = '' if groovy_predicate else predicate
         parameter = f'"{parameter.strip()}", ' if parameter else ''
-        return self.indent(f'.{set_method}({parameter}{predicate.strip()}){groovy_predicate}')
+        return self.indent(f'.{set_method}({parameter}{predicate.strip()}){description}{groovy_predicate}')
 
     def process_multiline_groovy(self, text):
         parts = re.split('\r?\n', text)
