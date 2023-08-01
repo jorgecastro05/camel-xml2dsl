@@ -3,6 +3,7 @@ from lxml import etree, objectify
 from rich import console
 from rich.console import Console
 import importlib.metadata
+import os
 import re
 import sys
 
@@ -65,8 +66,7 @@ public class >>> class name <<< extends RouteBuilder {
             description="Transforms xml routes to dsl routes " + __version__)
         p.add_argument('--xml', metavar='xml', type=str,
                        help='xml camel context file', required=True, env_var='XML_CTX_INPUT')
-        p.add_argument('--beans', metavar='beans', type=str,
-                       help='use beans instead processors', required=False, env_var='USE_BEANS')
+
         args = p.parse_args()
         with open(args.xml, "r") as xml_file:
             parser = etree.XMLParser(remove_comments=True)
@@ -107,13 +107,20 @@ public class >>> class name <<< extends RouteBuilder {
                 if 'id' in camelContext.attrib:
                     console.log("processing camel context", camelContext.attrib['id'])
 
-                class_name = camelContext.attrib['id'] if 'id' in camelContext.attrib else f'camelContext{str(idx)}'
-                class_name = class_name.capitalize()
-
                 self.get_namespaces(camelContext)
                 self.dsl_route += self.analyze_node(camelContext)
 
+            # Blueprint Route Contexts
+            for idx, routeContext in enumerate(self.find_camel_nodes(root, 'routeContext')):
+                if 'id' in routeContext.attrib:
+                    console.log("processing route context", camelContext.attrib['id'])
+
+                self.get_namespaces(routeContext)
+                self.dsl_route += self.analyze_node(routeContext)
+
             groovy_transformations = '\n\n'.join([v['transformation'] for k, v in self.groovy_transformations.items()])
+
+            class_name = os.path.splitext(os.path.basename(args.xml))[0].capitalize()
 
             dsl_route = Converter.CLASS_TEMPLATE \
                 .replace(">>> groovy transformations <<<", groovy_transformations) \
@@ -717,13 +724,12 @@ public class >>> class name <<< extends RouteBuilder {
         return rest_call
 
     def filter_def(self, node):
-        filter_def = self.indent(f'.filter(){self.handle_id(node)} // (source line: {str(node.sourceline)})')
+        filter_def = self.indent('.filter(' + self.analyze_element(node[0]) + ')' + self.handle_id(node))
+        node.remove(node[0])
         self.indentation += 1
         filter_def += self.analyze_node(node)
         self.indentation -= 1
-
-        filter_def += self.indent(f'.end() // end filter (source line: {str(node.sourceline)})')
-
+        filter_def += self.indent(f'.end() // (source line: {str(node.sourceline)})')
         return filter_def
 
     def routeContextRef_def(self, node):
