@@ -113,7 +113,7 @@ public class >>> class name <<< extends RouteBuilder {
             # Blueprint Route Contexts
             for idx, routeContext in enumerate(self.find_camel_nodes(root, 'routeContext')):
                 if 'id' in routeContext.attrib:
-                    console.log("processing route context", camelContext.attrib['id'])
+                    console.log("processing route context", routeContext.attrib['id'])
 
                 self.get_namespaces(routeContext)
                 self.dsl_route += self.analyze_node(routeContext)
